@@ -1,13 +1,40 @@
-import type { AppData, Exercise } from '../types'
-
-/** GIFs via jsDelivr — ExerciseGymGifsDB */
-const GIF = 'https://cdn.jsdelivr.net/gh/JahelCuadrado/ExerciseGymGifsDB@v1.1.0'
-const CREDIT = 'Animação: ExerciseGymGifsDB · Gym Visual'
+import type { AppData, Exercise, WorkoutProgram } from '../types'
+import { GIF_CREDIT_PRIMARY, gifForName } from './gifs'
 
 function id() {
   return crypto.randomUUID()
 }
 
+function ex(
+  partial: Omit<Exercise, 'gifCredit' | 'steps' | 'tips' | 'motion' | 'gifUrl'> & {
+    motion?: Exercise['motion']
+    steps?: string[]
+    tips?: string
+    gifUrl?: string
+    gifCredit?: string
+  }
+): Exercise {
+  const catalog = gifForName(partial.name)
+  const { gifUrl: overrideUrl, gifCredit: overrideCredit, ...rest } = partial
+  return {
+    motion: 'generic',
+    steps: [
+      'Posicione-se e ajuste a carga.',
+      'Execute o movimento com controle.',
+      'Mantenha postura e core firme.',
+      'Volte à posição inicial de forma lenta.',
+    ],
+    tips: 'Foque na amplitude e no músculo-alvo.',
+    ...rest,
+    gifUrl: overrideUrl ?? catalog?.gifUrl,
+    gifCredit: overrideCredit ?? catalog?.gifCredit ?? GIF_CREDIT_PRIMARY,
+  }
+}
+
+export { GIF_SUSPENSAO, gifForName } from './gifs'
+export { GIF_BY_NAME } from './gifs'
+
+// --- IDs treino pernas ---
 const EX_ABDUTORA = id()
 const EX_EXTENSORA = id()
 const EX_AGACHO = id()
@@ -17,62 +44,49 @@ const EX_LEG45 = id()
 const EX_FLEXORA = id()
 const EX_PANTURRILHA = id()
 
+// --- IDs treino A ---
+const EX_SUSPENSAO = id()
+const EX_REMADA_CURVADA = id()
+const EX_PUXADA_ABERTA = id()
+const EX_REMADA_ART = id()
+const EX_PUXADA_UNI = id()
+const EX_PULLDOWN = id()
+const EX_FACE_PULL = id()
+const EX_ROSCA_SCOTT = id()
+
+// --- IDs treino B ---
+const EX_SUPINO_DECL = id()
+const EX_SUPINO_HALT = id()
+const EX_ELEV_LAT = id()
+const EX_DEV_MILITAR = id()
+const EX_TRI_FRANCES = id()
+const EX_TRI_MAQ = id()
+const EX_OMBRO_ROSCA = id()
+const EX_OMBRO_TRI_FR = id()
+const EX_OMBRO_TRI_MQ = id()
+
+const WORKOUT_PERNAS = 'wk-pernas'
+const WORKOUT_COSTAS_BICEPS = 'wk-costas-biceps'
+const WORKOUT_PEITO_TRICEPS = 'wk-peito-triceps'
+const WORKOUT_OMBROS = 'wk-ombros'
+
 const today = new Date().toISOString().slice(0, 10)
 
-/**
- * Ordem da ficha (caderno):
- * 1 Abdutora · 2 Extensora · 3 Agacho · 4 Stiff
- * 5 Elevação pélvica · 6 Leg 45 · 7 Cadeira flexora · 8 Panturrilha
- */
-export const FICHA_ORDER = [
-  'Abdutora',
-  'Extensora',
-  'Agacho',
-  'Stiff',
-  'Elevação pélvica',
-  'Leg 45°',
-  'Cadeira flexora',
-  'Panturrilha',
-] as const
-
-/** aliases para reordenar dados antigos (ex: Agachamento → pos. do Agacho) */
-const ORDER_ALIASES: Record<string, string> = {
-  agachamento: 'Agacho',
-  'leg 45': 'Leg 45°',
-  'leg 45°': 'Leg 45°',
-  elevacao: 'Elevação pélvica',
-  'elevação pélvica': 'Elevação pélvica',
-}
-
-export function sortByFichaOrder(exercises: Exercise[]): Exercise[] {
-  const rank = (name: string) => {
-    const key = name.trim().toLowerCase()
-    const canonical = ORDER_ALIASES[key] ?? name
-    const idx = FICHA_ORDER.findIndex(
-      (n) => n.toLowerCase() === canonical.toLowerCase() || n.toLowerCase() === key
-    )
-    return idx === -1 ? 999 : idx
-  }
-  return [...exercises].sort((a, b) => rank(a.name) - rank(b.name))
-}
-
-export const INITIAL_DATA: AppData = {
-  profileName: 'Atleta',
-  workoutTitle: 'Treino de perna 2x semana',
+const pernas: WorkoutProgram = {
+  id: WORKOUT_PERNAS,
+  title: 'Treino de perna 2x semana',
+  shortLabel: 'Perna',
   warmupNote: 'Mobilidade — tornozelo, joelho e quadril',
   coreNote: 'Abdominal → prancha e alongamentos do core',
   goals: ['↑ volume', '↑ amplitude'],
   exercises: [
-    // 1
-    {
+    ex({
       id: EX_ABDUTORA,
       name: 'Abdutora',
       muscleGroup: 'Pernas',
       sets: 3,
       targetReps: 15,
       motion: 'abduction',
-      gifUrl: `${GIF}/abductors/lever-seated-hip-abduction.gif`,
-      gifCredit: CREDIT,
       steps: [
         'Sente-se com a coluna e o quadril firmes no encosto.',
         'Posicione as pernas nos pads internos, pés firmes.',
@@ -80,9 +94,8 @@ export const INITIAL_DATA: AppData = {
         'Volte lentamente sem deixar os pesos baterem.',
       ],
       tips: 'Não balance o tronco. Foque glúteo médio e controle a volta.',
-    },
-    // 2
-    {
+    }),
+    ex({
       id: EX_EXTENSORA,
       name: 'Extensora',
       muscleGroup: 'Pernas',
@@ -90,18 +103,8 @@ export const INITIAL_DATA: AppData = {
       targetReps: 10,
       warmup: '1×15 aquecimento',
       motion: 'extension',
-      gifUrl: `${GIF}/quads/lever-leg-extension.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Ajuste o pad logo acima do tornozelo.',
-        'Prenda o quadril no assento e segure as alças.',
-        'Estenda o joelho quase por completo, sem travar.',
-        'Desça em 2–3 segundos sentindo o quadríceps.',
-      ],
-      tips: 'Evite chutar a carga. Movimento fluido e amplitude completa.',
-    },
-    // 3
-    {
+    }),
+    ex({
       id: EX_AGACHO,
       name: 'Agacho',
       muscleGroup: 'Pernas',
@@ -109,36 +112,16 @@ export const INITIAL_DATA: AppData = {
       targetReps: 10,
       warmup: '1×15 aquecimento',
       motion: 'squat',
-      gifUrl: `${GIF}/glutes/barbell-full-squat.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Pés na largura dos ombros, pontas levemente para fora.',
-        'Peito aberto, core e glúteo ativos.',
-        'Desça o quadril para trás e baixo (joelhos no sentido dos pés).',
-        'Empurre o chão com os calcanhares e estenda o quadril no topo.',
-      ],
-      tips: 'Não deixe o joelho colapsar para dentro. Desça o máximo sem perder a postura.',
-    },
-    // 4
-    {
+    }),
+    ex({
       id: EX_STIFF,
       name: 'Stiff',
       muscleGroup: 'Pernas',
       sets: 4,
       targetReps: 10,
       motion: 'hinge',
-      gifUrl: `${GIF}/hamstrings/barbell-straight-leg-deadlift.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Pés na largura dos quadris, joelhos levemente flexionados.',
-        'Empurre o glúteo para trás, barra/halteres próximo às coxas.',
-        'Desça até sentir o alongamento do posterior (costas retas).',
-        'Suba contraindo glúteos e posteriores de coxa.',
-      ],
-      tips: 'É dobradiça de quadril, não agachamento. Não arredonde a lombar.',
-    },
-    // 5
-    {
+    }),
+    ex({
       id: EX_PELVICA,
       name: 'Elevação pélvica',
       muscleGroup: 'Pernas',
@@ -146,54 +129,24 @@ export const INITIAL_DATA: AppData = {
       targetReps: 10,
       warmup: '1×12 aquecimento',
       motion: 'hipthrust',
-      gifUrl: `${GIF}/glutes/barbell-glute-bridge-two-legs-on-bench-male.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Costas superiores no banco, barra no creche do quadril.',
-        'Pés no chão, canelas ~verticais no topo.',
-        'Empurre o chão e eleve o quadril até alinhar com ombros e joelhos.',
-        'Pause 1s no topo, desça controlado sem perder o contato com o banco.',
-      ],
-      tips: 'Queixo levemente no peito. Contraia o glúteo no topo — não hiperextenda a lombar.',
-    },
-    // 6
-    {
+    }),
+    ex({
       id: EX_LEG45,
       name: 'Leg 45°',
       muscleGroup: 'Pernas',
       sets: 3,
       targetReps: 12,
       motion: 'legpress',
-      gifUrl: `${GIF}/glutes/sled-45-leg-press.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Pés no meio da plataforma, na largura dos ombros.',
-        'Destrave com segurança e segure as alças.',
-        'Desça até ~90° no joelho sem levantar o quadril do encosto.',
-        'Empurre a plataforma sem travar o joelho no final.',
-      ],
-      tips: 'Amplitude com controle. Joelhos alinhados com os pés.',
-    },
-    // 7
-    {
+    }),
+    ex({
       id: EX_FLEXORA,
       name: 'Cadeira flexora',
       muscleGroup: 'Pernas',
       sets: 3,
       targetReps: 12,
       motion: 'curl',
-      gifUrl: `${GIF}/hamstrings/lever-seated-leg-curl.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Pad justo acima do calcanhar; quadril fixo no assento.',
-        'Flexione a perna puxando o calcanhar em direção ao glúteo.',
-        'Aperte o posterior no fim da flexão.',
-        'Volte controlado sem arquear a lombar.',
-      ],
-      tips: 'Movimento isolado do posterior. Nada de impulso com o tronco.',
-    },
-    // 8
-    {
+    }),
+    ex({
       id: EX_PANTURRILHA,
       name: 'Panturrilha',
       muscleGroup: 'Pernas',
@@ -201,35 +154,225 @@ export const INITIAL_DATA: AppData = {
       targetReps: 15,
       notes: 'Fazer 3× na semana',
       motion: 'calf',
-      gifUrl: `${GIF}/calves/barbell-standing-calf-raise.gif`,
-      gifCredit: CREDIT,
-      steps: [
-        'Ponta do pé no degrau/plataforma, calcanhar livre.',
-        'Desça o calcanhar com amplitude máxima (alongamento).',
-        'Suba sobre a ponta dos pés o mais alto possível.',
-        'Pause 1 segundo no topo e repita.',
-      ],
-      tips: 'Amplitude total. Controle a descida — é onde a panturrilha cresce.',
-    },
+    }),
   ],
-  sessions: [
-    {
-      id: id(),
-      date: today,
-      label: 'Sessão de hoje',
-      entries: [
-        { exerciseId: EX_ABDUTORA, performedReps: null, currentWeight: null },
-        { exerciseId: EX_EXTENSORA, performedReps: null, currentWeight: null },
-        { exerciseId: EX_AGACHO, performedReps: null, currentWeight: null },
-        { exerciseId: EX_STIFF, performedReps: null, currentWeight: null },
-        { exerciseId: EX_PELVICA, performedReps: null, currentWeight: null },
-        { exerciseId: EX_LEG45, performedReps: null, currentWeight: null },
-        { exerciseId: EX_FLEXORA, performedReps: null, currentWeight: null },
-        { exerciseId: EX_PANTURRILHA, performedReps: null, currentWeight: null },
-      ],
-    },
-  ],
-  activeSessionId: null,
 }
 
-INITIAL_DATA.activeSessionId = INITIAL_DATA.sessions[0].id
+const costasBiceps: WorkoutProgram = {
+  id: WORKOUT_COSTAS_BICEPS,
+  title: 'Treino A — Costas e Bíceps',
+  shortLabel: 'Costas e Bíceps',
+  warmupNote: 'Superiores · puxar',
+  coreNote: 'Escápulas e cotovelos firmes',
+  goals: ['↑ volume', '↑ controle'],
+  exercises: [
+    ex({
+      id: EX_SUSPENSAO,
+      name: 'Suspensão na barra',
+      muscleGroup: 'Costas',
+      sets: 2,
+      targetReps: 15,
+      notes: '2 séries de 10–20 segundos',
+      tips: 'Segure a barra com ombros abaixados (não encolha). Respire e mantenha o core. Vale depressão de escápulas leve, como no início da animação.',
+    }),
+    ex({
+      id: EX_REMADA_CURVADA,
+      name: 'Remada curvada',
+      muscleGroup: 'Costas',
+      sets: 3,
+      targetReps: 10,
+      warmup: '1×15 aquecimento',
+      tips: 'Tronco inclinado, puxe o cotovelo para trás e suba o peito levemente.',
+    }),
+    ex({
+      id: EX_PUXADA_ABERTA,
+      name: 'Puxada aberta',
+      muscleGroup: 'Costas',
+      sets: 3,
+      targetReps: 10,
+      tips: 'Puxada ampla até a clavícula / parte alta do peito. Controle a subida.',
+    }),
+    ex({
+      id: EX_REMADA_ART,
+      name: 'Remada articulada',
+      muscleGroup: 'Costas',
+      sets: 3,
+      targetReps: 10,
+      tips: 'Peito apoiado/estável. Puxe cotovelos para trás sem balançar o tronco.',
+    }),
+    ex({
+      id: EX_PUXADA_UNI,
+      name: 'Puxada unilateral',
+      muscleGroup: 'Costas',
+      sets: 3,
+      targetReps: 10,
+      tips: 'Um lado de cada vez. Mantenha ombro estável e amplitude completa.',
+    }),
+    ex({
+      id: EX_PULLDOWN,
+      name: 'Pulldown',
+      muscleGroup: 'Costas',
+      sets: 3,
+      targetReps: 12,
+      notes: '3×10–12',
+      tips: 'Braços estendidos, leve o cabo para a frente da coxa com controle nos dorsais.',
+    }),
+    ex({
+      id: EX_ROSCA_SCOTT,
+      name: 'Rosca Scott',
+      muscleGroup: 'Bíceps',
+      sets: 3,
+      targetReps: 12,
+      notes: '3×10–12',
+      tips: 'Braços apoiados no banco Scott. Suba sem levantar o cotovelo do apoio.',
+    }),
+  ],
+}
+
+const peitoTriceps: WorkoutProgram = {
+  id: WORKOUT_PEITO_TRICEPS,
+  title: 'Treino B — Peito e Tríceps',
+  shortLabel: 'Peito e Tríceps',
+  warmupNote: 'Superiores · empurrar',
+  coreNote: 'Escápulas retraídas no peito',
+  goals: ['↑ volume', '↑ estabilidade'],
+  exercises: [
+    ex({
+      id: EX_SUPINO_DECL,
+      name: 'Supino declinado máquina',
+      muscleGroup: 'Peito',
+      sets: 3,
+      targetReps: 10,
+      warmup: '1×15 aquecimento',
+      tips: 'Trajetória declinada. Empurre e volte sem bater os pesos.',
+    }),
+    ex({
+      id: EX_SUPINO_HALT,
+      name: 'Supino com halteres',
+      muscleGroup: 'Peito',
+      sets: 3,
+      targetReps: 10,
+      warmup: '1×15 aquecimento',
+      tips: 'Halteres descem controlados. Cotovelos ~45° do tronco.',
+    }),
+    ex({
+      id: EX_TRI_FRANCES,
+      name: 'Tríceps francês',
+      muscleGroup: 'Tríceps',
+      sets: 4,
+      targetReps: 12,
+      notes: '4×10–12',
+      tips: 'Cotovelos fixos. Desça a carga atrás da cabeça e estenda até o final.',
+    }),
+    ex({
+      id: EX_TRI_MAQ,
+      name: 'Tríceps máquina',
+      muscleGroup: 'Tríceps',
+      sets: 4,
+      targetReps: 12,
+      notes: '4×10–12',
+      tips: 'Cotovelos colados. Estenda totalmente e controle a volta.',
+    }),
+  ],
+}
+
+const ombros: WorkoutProgram = {
+  id: WORKOUT_OMBROS,
+  title: 'Ombro, Bíceps e Tríceps',
+  shortLabel: 'Ombro',
+  warmupNote: 'Aquecimento de ombro, cotovelo e manguito',
+  coreNote: 'Não encolher o trapézio · cotovelos estáveis no braço',
+  goals: ['↑ ombro', '↑ braço'],
+  exercises: [
+    ex({
+      id: EX_ELEV_LAT,
+      name: 'Elevação lateral',
+      muscleGroup: 'Ombros',
+      sets: 4,
+      targetReps: 12,
+      notes: '4×10–12',
+      tips: 'Cotovelos levemente flexionados. Suba até a linha do ombro sem encolher.',
+    }),
+    ex({
+      id: EX_DEV_MILITAR,
+      name: 'Desenvolvimento militar',
+      muscleGroup: 'Ombros',
+      sets: 3,
+      targetReps: 10,
+      tips: 'Empurre a barra para cima sem arquear demais a lombar. Core firme.',
+    }),
+    ex({
+      id: EX_FACE_PULL,
+      name: 'Face Pull',
+      muscleGroup: 'Ombros',
+      sets: 3,
+      targetReps: 12,
+      tips: 'Puxe em direção ao rosto, cotovelos altos. Foque rotadores e deltoide posterior.',
+    }),
+    ex({
+      id: EX_OMBRO_ROSCA,
+      name: 'Rosca Scott',
+      muscleGroup: 'Bíceps',
+      sets: 3,
+      targetReps: 12,
+      notes: '3×10–12',
+      tips: 'Braços apoiados no banco Scott. Suba sem levantar o cotovelo do apoio.',
+    }),
+    ex({
+      id: EX_OMBRO_TRI_FR,
+      name: 'Tríceps francês',
+      muscleGroup: 'Tríceps',
+      sets: 4,
+      targetReps: 12,
+      notes: '4×10–12',
+      tips: 'Cotovelos fixos. Desça a carga atrás da cabeça e estenda até o final.',
+    }),
+    ex({
+      id: EX_OMBRO_TRI_MQ,
+      name: 'Tríceps máquina',
+      muscleGroup: 'Tríceps',
+      sets: 4,
+      targetReps: 12,
+      notes: '4×10–12',
+      tips: 'Cotovelos colados. Estenda totalmente e controle a volta.',
+    }),
+  ],
+}
+
+function entriesFor(workout: WorkoutProgram) {
+  return workout.exercises.map((e) => ({
+    exerciseId: e.id,
+    performedReps: null as number | null,
+    currentWeight: null as number | null,
+  }))
+}
+
+const sessionPernas = id()
+
+export const INITIAL_DATA: AppData = {
+  profileName: 'Marlon Miranda',
+  workouts: [pernas, costasBiceps, peitoTriceps, ombros],
+  activeWorkoutId: WORKOUT_PERNAS,
+  sessions: [
+    {
+      id: sessionPernas,
+      workoutId: WORKOUT_PERNAS,
+      date: today,
+      label: 'Sessão de hoje',
+      entries: entriesFor(pernas),
+    },
+  ],
+  activeSessionId: sessionPernas,
+}
+
+export const WORKOUT_IDS = {
+  PERNAS: WORKOUT_PERNAS,
+  COSTAS_BICEPS: WORKOUT_COSTAS_BICEPS,
+  PEITO_TRICEPS: WORKOUT_PEITO_TRICEPS,
+  OMBROS: WORKOUT_OMBROS,
+} as const
+
+export function getWorkout(data: AppData, workoutId?: string): WorkoutProgram {
+  const id = workoutId ?? data.activeWorkoutId
+  return data.workouts.find((w) => w.id === id) ?? data.workouts[0]
+}

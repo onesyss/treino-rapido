@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Target, Layers, PlayCircle } from 'lucide-react'
 import type { Exercise } from '../types'
+import { gifForName, sourcesFromEntry } from '../data/gifs'
 import { GROUP_STYLE, GroupIcon } from '../utils/icons'
 import { ExecutionFigure } from './ExecutionFigure'
 
@@ -10,10 +11,16 @@ interface HowToModalProps {
 }
 
 export function HowToModal({ exercise, onClose }: HowToModalProps) {
-  const [gifError, setGifError] = useState(false)
+  const catalog = gifForName(exercise.name)
+  const sources = sourcesFromEntry(catalog, exercise.gifUrl)
+  const [srcIndex, setSrcIndex] = useState(0)
   const [gifLoaded, setGifLoaded] = useState(false)
-  const showGif = Boolean(exercise.gifUrl) && !gifError
+  const [exhausted, setExhausted] = useState(false)
+  const currentSrc = !exhausted ? sources[srcIndex] : undefined
+  const showGif = Boolean(currentSrc)
   const style = GROUP_STYLE[exercise.muscleGroup] ?? GROUP_STYLE.Outro
+  const credit =
+    gifForName(exercise.name)?.gifCredit ?? exercise.gifCredit
 
   return (
     <div
@@ -27,21 +34,13 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
         className="card max-h-[92vh] w-full max-w-lg overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="card-accent card-accent-sky" />
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="flex items-start gap-3">
-            <span
-              className={[
-                'icon-blob h-10 w-10 ring-1',
-                style.bg,
-                style.icon,
-                style.ring,
-              ].join(' ')}
-            >
+            <span className="icon-blob h-10 w-10">
               <PlayCircle className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-sky-400">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Como executar
               </p>
               <h2 id="howto-title" className="font-display mt-0.5 text-xl font-bold text-white">
@@ -78,27 +77,43 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
 
         <div className="space-y-4 px-5 py-5">
           {showGif ? (
-            <div className="relative overflow-hidden rounded-xl bg-black/40 ring-1 ring-sky-500/20">
+            <div className="relative overflow-hidden rounded-xl bg-black/40 ring-1 ring-border">
               {!gifLoaded && (
                 <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">
                   Carregando…
                 </div>
               )}
               <img
-                src={exercise.gifUrl}
+                key={currentSrc}
+                src={currentSrc}
                 alt={`Demonstração: ${exercise.name}`}
                 className="mx-auto max-h-[300px] w-full object-contain"
                 loading="eager"
                 onLoad={() => setGifLoaded(true)}
-                onError={() => setGifError(true)}
+                onError={() => {
+                  setGifLoaded(false)
+                  if (srcIndex + 1 < sources.length) {
+                    setSrcIndex((i) => i + 1)
+                  } else {
+                    setExhausted(true)
+                  }
+                }}
               />
+              {credit && gifLoaded && (
+                <p className="px-2 py-1 text-center text-[10px] text-slate-500">{credit}</p>
+              )}
             </div>
           ) : (
-            <ExecutionFigure motion={exercise.motion} />
+            <div className="space-y-2">
+              <ExecutionFigure motion={exercise.motion} />
+              <p className="text-center text-xs text-slate-500">
+                Demonstração em GIF indisponível — use os passos abaixo.
+              </p>
+            </div>
           )}
 
           <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-violet-400">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <Layers className="h-3.5 w-3.5" />
               Passos
             </div>
@@ -108,7 +123,7 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
                   key={i}
                   className="flex gap-3 rounded-lg bg-panel-2 px-3 py-2.5 ring-1 ring-border/60"
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-sky-500/15 text-xs font-bold text-sky-400">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-panel text-xs font-bold text-slate-400 ring-1 ring-border">
                     {i + 1}
                   </span>
                   <span className="text-sm leading-relaxed text-slate-300">{step}</span>
@@ -118,8 +133,8 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
           </div>
 
           {exercise.tips && (
-            <div className="rounded-lg bg-emerald-500/5 px-3 py-3 ring-1 ring-emerald-500/20">
-              <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-400/90">
+            <div className="rounded-lg bg-panel-2 px-3 py-3 ring-1 ring-border">
+              <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <Target className="h-3.5 w-3.5" />
                 Dica
               </div>
@@ -127,15 +142,9 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
             </div>
           )}
 
-          {exercise.notes && (
-            <p className="text-xs text-amber-400/90">Obs.: {exercise.notes}</p>
-          )}
+          {exercise.notes && <p className="text-xs text-slate-500">Obs.: {exercise.notes}</p>}
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full rounded-xl bg-sky-500 py-3 text-sm font-bold text-slate-950 hover:bg-sky-400"
-          >
+          <button type="button" onClick={onClose} className="btn-primary w-full justify-center py-3">
             Fechar
           </button>
         </div>

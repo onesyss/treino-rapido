@@ -8,8 +8,6 @@ export type MuscleGroup =
   | 'Abdômen'
   | 'Outro'
 
-
-/** Tipo de movimento para o gráfico de execução */
 export type MotionType =
   | 'abduction'
   | 'extension'
@@ -32,9 +30,7 @@ export interface Exercise {
   motion: MotionType
   steps: string[]
   tips: string
-  /** GIF de demonstração (CDN ExerciseGymGifsDB / jsDelivr) */
   gifUrl?: string
-  /** Crédito da animação */
   gifCredit?: string
 }
 
@@ -46,18 +42,26 @@ export interface SessionEntry {
 
 export interface WorkoutSession {
   id: string
+  workoutId: string
   date: string
   label: string
   entries: SessionEntry[]
 }
 
-export interface AppData {
-  profileName: string
-  workoutTitle: string
+export interface WorkoutProgram {
+  id: string
+  title: string
+  shortLabel: string
   warmupNote: string
   coreNote: string
   goals: string[]
   exercises: Exercise[]
+}
+
+export interface AppData {
+  profileName: string
+  workouts: WorkoutProgram[]
+  activeWorkoutId: string
   sessions: WorkoutSession[]
   activeSessionId: string | null
 }

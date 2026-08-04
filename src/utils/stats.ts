@@ -1,5 +1,5 @@
 import type { AppData, Exercise } from '../types'
-import { getPreviousWeight } from '../hooks/useAppData'
+import { getActiveSession, getActiveWorkout, getPreviousWeight } from '../hooks/useAppData'
 
 export function percentIncrease(prev: number | null, current: number | null): number | null {
   if (prev == null || current == null || prev <= 0) return null
@@ -9,8 +9,10 @@ export function percentIncrease(prev: number | null, current: number | null): nu
 export function volumeForSession(data: AppData, sessionId: string): number {
   const session = data.sessions.find((s) => s.id === sessionId)
   if (!session) return 0
+  const workout = data.workouts.find((w) => w.id === session.workoutId)
+  if (!workout) return 0
   return session.entries.reduce((sum, e) => {
-    const ex = data.exercises.find((x) => x.id === e.exerciseId)
+    const ex = workout.exercises.find((x) => x.id === e.exerciseId)
     if (!ex || e.currentWeight == null || e.performedReps == null) return sum
     return sum + e.currentWeight * e.performedReps * ex.sets
   }, 0)
@@ -28,8 +30,10 @@ export function volumeForSessionEntry(
 export function chartDataForExercise(data: AppData, exerciseId: string) {
   return data.sessions
     .map((s) => {
+      const workout = data.workouts.find((w) => w.id === s.workoutId)
       const entry = s.entries.find((e) => e.exerciseId === exerciseId)
       if (!entry || entry.currentWeight == null) return null
+      const sets = workout?.exercises.find((x) => x.id === exerciseId)?.sets ?? 1
       return {
         date: s.date,
         label: s.label,
@@ -37,9 +41,7 @@ export function chartDataForExercise(data: AppData, exerciseId: string) {
         reps: entry.performedReps,
         volume:
           entry.performedReps != null
-            ? entry.currentWeight *
-              entry.performedReps *
-              (data.exercises.find((x) => x.id === exerciseId)?.sets ?? 1)
+            ? entry.currentWeight * entry.performedReps * sets
             : null,
       }
     })
@@ -52,34 +54,25 @@ export function chartDataForExercise(data: AppData, exerciseId: string) {
   }[]
 }
 
+/** séries do treino ativo apenas */
 export function overallVolumeSeries(data: AppData) {
-  return data.sessions.map((s) => ({
-    date: s.date,
-    label: s.label,
-    volume: volumeForSession(data, s.id),
-  }))
+  const workoutId = data.activeWorkoutId
+  return data.sessions
+    .filter((s) => s.workoutId === workoutId)
+    .map((s) => ({
+      date: s.date,
+      label: s.label,
+      volume: volumeForSession(data, s.id),
+    }))
 }
 
-export function rowMetrics(data: AppData, exercise: Exercise, sessionId: string) {
-  const session = data.sessions.find((s) => s.id === sessionId)
-  const entry = session?.entries.find((e) => e.exerciseId === exercise.id)
-  const prev = getPreviousWeight(data, exercise.id, sessionId)
-  const current = entry?.currentWeight ?? null
-  const pct = percentIncrease(prev, current)
-  return {
-    entry,
-    previousWeight: prev,
-    currentWeight: current,
-    percent: pct,
-  }
-}
-
-/** Evolução no dia/sessão: carga, reps e volume por exercício */
 export function dayProgressData(data: AppData, sessionId: string) {
   const session = data.sessions.find((s) => s.id === sessionId)
   if (!session) return []
+  const workout = data.workouts.find((w) => w.id === session.workoutId)
+  if (!workout) return []
 
-  return data.exercises.map((ex) => {
+  return workout.exercises.map((ex) => {
     const entry = session.entries.find((e) => e.exerciseId === ex.id)
     const weight = entry?.currentWeight ?? 0
     const reps = entry?.performedReps ?? 0
@@ -122,15 +115,17 @@ export function startOfWeekISO(dateISO: string): string {
 
 const WEEKDAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
-/** Evolução na semana (seg–dom) */
 export function weekProgressData(data: AppData, refDateISO: string) {
   const start = parseLocalDate(startOfWeekISO(refDateISO))
+  const workoutId = data.activeWorkoutId
 
   return Array.from({ length: 7 }, (_, i) => {
     const day = new Date(start)
     day.setDate(start.getDate() + i)
     const iso = toISODate(day)
-    const sessionsThatDay = data.sessions.filter((s) => s.date === iso)
+    const sessionsThatDay = data.sessions.filter(
+      (s) => s.date === iso && s.workoutId === workoutId
+    )
     const volume = sessionsThatDay.reduce((sum, s) => sum + volumeForSession(data, s.id), 0)
 
     let avgWeight = 0
@@ -179,3 +174,6 @@ export function weekSummary(week: ReturnType<typeof weekProgressData>) {
   const reps = week.reduce((s, d) => s + d.reps, 0)
   return { trainDays, volume, reps }
 }
+
+// re-exports for components that still import helpers
+export { getActiveSession, getActiveWorkout, getPreviousWeight }

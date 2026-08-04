@@ -1,6 +1,7 @@
 import { Plus, Trash2, RotateCcw, Pencil, Save, User } from 'lucide-react'
 import { useState } from 'react'
-import type { AppData, Exercise, MotionType, MuscleGroup } from '../types'
+import type { AppData, Exercise, MuscleGroup, WorkoutProgram } from '../types'
+import { getActiveWorkout } from '../hooks/useAppData'
 import { GROUP_STYLE, GroupIcon } from '../utils/icons'
 
 const GROUPS: MuscleGroup[] = [
@@ -14,27 +15,12 @@ const GROUPS: MuscleGroup[] = [
   'Outro',
 ]
 
-const MOTIONS: { value: MotionType; label: string }[] = [
-  { value: 'squat', label: 'Agachamento' },
-  { value: 'hinge', label: 'Dobradiça (stiff)' },
-  { value: 'hipthrust', label: 'Elevação pélvica' },
-  { value: 'extension', label: 'Extensão de joelho' },
-  { value: 'curl', label: 'Flexão de joelho' },
-  { value: 'legpress', label: 'Leg press' },
-  { value: 'abduction', label: 'Abdução' },
-  { value: 'calf', label: 'Elevação de panturrilha' },
-  { value: 'generic', label: 'Genérico' },
-]
-
 interface EditWorkoutViewProps {
   data: AppData
-  onSaveProfile: (p: {
-    profileName: string
-    workoutTitle: string
-    warmupNote: string
-    coreNote: string
-    goals: string[]
-  }) => void
+  onSaveProfile: (name: string) => void
+  onSaveMeta: (
+    p: Partial<Pick<WorkoutProgram, 'title' | 'warmupNote' | 'coreNote' | 'goals'>>
+  ) => void
   onSaveExercises: (exercises: Exercise[]) => void
   onReset: () => void
 }
@@ -42,16 +28,31 @@ interface EditWorkoutViewProps {
 export function EditWorkoutView({
   data,
   onSaveProfile,
+  onSaveMeta,
   onSaveExercises,
   onReset,
 }: EditWorkoutViewProps) {
+  const workout = getActiveWorkout(data)
   const [profileName, setProfileName] = useState(data.profileName)
-  const [workoutTitle, setWorkoutTitle] = useState(data.workoutTitle)
-  const [warmupNote, setWarmupNote] = useState(data.warmupNote)
-  const [coreNote, setCoreNote] = useState(data.coreNote)
-  const [goals, setGoals] = useState(data.goals.join(', '))
-  const [exercises, setExercises] = useState<Exercise[]>(() => structuredClone(data.exercises))
+  const [workoutTitle, setWorkoutTitle] = useState(workout.title)
+  const [warmupNote, setWarmupNote] = useState(workout.warmupNote)
+  const [coreNote, setCoreNote] = useState(workout.coreNote)
+  const [goals, setGoals] = useState(workout.goals.join(', '))
+  const [exercises, setExercises] = useState<Exercise[]>(() =>
+    structuredClone(workout.exercises)
+  )
   const [savedFlash, setSavedFlash] = useState(false)
+  const [syncedId, setSyncedId] = useState(workout.id)
+
+  // recarrega form ao trocar ficha
+  if (syncedId !== workout.id) {
+    setSyncedId(workout.id)
+    setWorkoutTitle(workout.title)
+    setWarmupNote(workout.warmupNote)
+    setCoreNote(workout.coreNote)
+    setGoals(workout.goals.join(', '))
+    setExercises(structuredClone(workout.exercises))
+  }
 
   function flash() {
     setSavedFlash(true)
@@ -59,9 +60,9 @@ export function EditWorkoutView({
   }
 
   function saveAll() {
-    onSaveProfile({
-      profileName: profileName.trim() || 'Atleta',
-      workoutTitle: workoutTitle.trim() || 'Meu treino',
+    onSaveProfile(profileName)
+    onSaveMeta({
+      title: workoutTitle.trim() || workout.shortLabel,
       warmupNote,
       coreNote,
       goals: goals
@@ -85,7 +86,7 @@ export function EditWorkoutView({
     const neu: Exercise = {
       id: crypto.randomUUID(),
       name: 'Novo exercício',
-      muscleGroup: 'Pernas',
+      muscleGroup: 'Outro',
       sets: 3,
       targetReps: 10,
       motion: 'generic',
@@ -103,33 +104,35 @@ export function EditWorkoutView({
 
   return (
     <div className="space-y-5">
-      <section className="card overflow-hidden p-5">
-        <div className="card-accent card-accent-amber" />
+      <section className="card p-5">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="icon-blob h-10 w-10 bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/25">
+            <span className="icon-blob h-10 w-10">
               <Pencil className="h-5 w-5" />
             </span>
-            <h2 className="font-display text-xl font-bold text-white">Montar / editar treino</h2>
+            <div>
+              <h2 className="font-display text-xl font-bold text-white">Montar / editar treino</h2>
+              <p className="text-sm text-slate-500">Editando: {workout.shortLabel}</p>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => {
-                if (confirm('Restaurar o treino de pernas original e apagar o histórico?')) {
+                if (confirm('Restaurar treinos originais e apagar o histórico?')) {
                   onReset()
                   window.location.reload()
                 }
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm text-slate-400 ring-1 ring-border hover:text-rose-400"
+              className="btn-ghost"
             >
-              <RotateCcw className="h-4 w-4 text-rose-400/80" />
-              Resetar
+              <RotateCcw className="h-4 w-4" />
+              Resetar tudo
             </button>
             <button
               type="button"
               onClick={saveAll}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400"
+              className="btn-primary"
             >
               <Save className="h-4 w-4" />
               {savedFlash ? 'Salvo ✓' : 'Salvar alterações'}
@@ -141,19 +144,31 @@ export function EditWorkoutView({
           <Field
             label={
               <span className="inline-flex items-center gap-1">
-                <User className="h-3 w-3 text-sky-400" /> Seu nome
+                <User className="h-3 w-3 text-slate-500" /> Seu nome
               </span>
             }
           >
-            <input value={profileName} onChange={(e) => setProfileName(e.target.value)} className="field" />
+            <input
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              className="field"
+            />
           </Field>
           <Field label="Título do treino">
-            <input value={workoutTitle} onChange={(e) => setWorkoutTitle(e.target.value)} className="field" />
+            <input
+              value={workoutTitle}
+              onChange={(e) => setWorkoutTitle(e.target.value)}
+              className="field"
+            />
           </Field>
-          <Field label="Mobilidade / aquecimento">
-            <input value={warmupNote} onChange={(e) => setWarmupNote(e.target.value)} className="field" />
+          <Field label="Notas / aquecimento">
+            <input
+              value={warmupNote}
+              onChange={(e) => setWarmupNote(e.target.value)}
+              className="field"
+            />
           </Field>
-          <Field label="Core / finalização">
+          <Field label="Core / observação">
             <input value={coreNote} onChange={(e) => setCoreNote(e.target.value)} className="field" />
           </Field>
           <Field label="Metas (separadas por vírgula)" className="sm:col-span-2">
@@ -163,13 +178,12 @@ export function EditWorkoutView({
       </section>
 
       <section className="card overflow-hidden">
-        <div className="card-accent card-accent-sky" />
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3 className="font-semibold text-white">Exercícios</h3>
           <button
             type="button"
             onClick={addEx}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/15 px-3 py-2 text-sm font-semibold text-sky-400 ring-1 ring-sky-500/25"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-panel-2 px-3 py-2 text-sm font-semibold text-slate-200 ring-1 ring-border"
           >
             <Plus className="h-4 w-4" />
             Adicionar
@@ -198,7 +212,9 @@ export function EditWorkoutView({
                   <label className="mb-1 block text-xs text-slate-500">Grupo</label>
                   <select
                     value={ex.muscleGroup}
-                    onChange={(e) => updateEx(ex.id, { muscleGroup: e.target.value as MuscleGroup })}
+                    onChange={(e) =>
+                      updateEx(ex.id, { muscleGroup: e.target.value as MuscleGroup })
+                    }
                     className="field"
                   >
                     {GROUPS.map((g) => (
@@ -224,7 +240,9 @@ export function EditWorkoutView({
                     type="number"
                     min={1}
                     value={ex.targetReps}
-                    onChange={(e) => updateEx(ex.id, { targetReps: Number(e.target.value) || 1 })}
+                    onChange={(e) =>
+                      updateEx(ex.id, { targetReps: Number(e.target.value) || 1 })
+                    }
                     className="field"
                   />
                 </div>
@@ -232,7 +250,7 @@ export function EditWorkoutView({
                   <button
                     type="button"
                     onClick={() => removeEx(ex.id)}
-                    className="inline-flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm text-rose-400 ring-1 ring-border hover:bg-rose-500/10"
+                    className="inline-flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm text-slate-400 ring-1 ring-border hover:text-slate-200"
                   >
                     <Trash2 className="h-4 w-4" />
                     {i + 1}
@@ -248,25 +266,19 @@ export function EditWorkoutView({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-500">Animação (tipo)</label>
-                  <select
-                    value={ex.motion}
-                    onChange={(e) => updateEx(ex.id, { motion: e.target.value as MotionType })}
+                  <label className="mb-1 block text-xs text-slate-500">Obs.</label>
+                  <input
+                    value={ex.notes ?? ''}
+                    onChange={(e) => updateEx(ex.id, { notes: e.target.value || undefined })}
                     className="field"
-                  >
-                    {MOTIONS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div className="sm:col-span-2 lg:col-span-4">
                   <label className="mb-1 block text-xs text-slate-500">
                     Passos da execução (um por linha)
                   </label>
                   <textarea
-                    rows={3}
+                    rows={2}
                     value={(ex.steps ?? []).join('\n')}
                     onChange={(e) =>
                       updateEx(ex.id, {
