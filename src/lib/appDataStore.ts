@@ -2,6 +2,7 @@ import { GIF_CREDIT_PRIMARY, gifForName, isCardioExerciseName, normalizeExercise
 import { INITIAL_DATA } from '../data/initialData'
 import type { AppData, Exercise, WorkoutProgram } from '../types'
 import { getSupabase, isSupabaseConfigured } from './supabase'
+import { isSharedTableMissingError, SHARED_SETUP_SQL } from './sharedSetupSql'
 
 const LOCAL_LEGACY_KEYS = [
   'treino-rapido-v9',
@@ -281,10 +282,16 @@ export async function ensureAuthUserId(): Promise<string> {
 
 function sharedMissingMessage(detail: string): string {
   return (
-    'Cloud compartilhado indisponível. No Supabase → SQL Editor, rode o arquivo supabase/schema.sql ' +
-    '(cria a tabela shared_app_state). Depois recarregue tablet e celular. ' +
+    'Falta criar a tabela shared_app_state no Supabase. ' +
+    'Abra o projeto qjkdtipsshfjqttbpwpj → SQL Editor → cole o SQL do botão “Copiar SQL” e clique Run. ' +
+    'Espere 10s e toque em “Tentar de novo”. ' +
     `Detalhe: ${detail}`
   )
+}
+
+function isMissingSharedTable(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false
+  return isSharedTableMissingError(err.message) || err.code === 'PGRST205' || err.code === '42P01'
 }
 
 async function upsertShared(data: AppData): Promise<void> {
@@ -296,9 +303,28 @@ async function upsertShared(data: AppData): Promise<void> {
   if (error) throw new Error(sharedMissingMessage(error.message))
 }
 
+async function loadPrivateAndLocal(): Promise<AppData> {
+  const supabase = getSupabase()
+  let own: AppData | null = null
+  try {
+    const userId = await ensureAuthUserId()
+    const ownRes = await supabase
+      .from('app_state')
+      .select('data')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!ownRes.error && ownRes.data?.data && isValidStored(ownRes.data.data)) {
+      own = normalizeAppData(ownRes.data.data as AppData)
+    }
+  } catch (e) {
+    console.warn('[Supabase] auth/backup:', e)
+  }
+  return pickRichest(own, readLegacyLocal())
+}
+
 /**
  * Fonte única: shared_app_state (id=main) = mesmo treino em tablet e celular.
- * Nunca sobrescreve a nuvem com um estado mais vazio.
+ * Se a tabela não existir, usa backup local/privado e devolve erro para o app mostrar o SQL.
  */
 export async function loadAppDataFromSupabase(): Promise<AppData> {
   if (!isSupabaseConfigured()) {
@@ -309,12 +335,21 @@ export async function loadAppDataFromSupabase(): Promise<AppData> {
 
   const supabase = getSupabase()
 
-  // Shared primeiro (não depende de qual usuário anônimo está logado)
   const sharedRes = await supabase
     .from('shared_app_state')
     .select('data')
     .eq('id', SHARED_STATE_ID)
     .maybeSingle()
+
+  if (sharedRes.error && isMissingSharedTable(sharedRes.error)) {
+    // App continua com dados locais/privados, mas sinaliza SQL obrigatório
+    const fallback = await loadPrivateAndLocal()
+    writeLocalMirror(fallback)
+    const err = new Error(sharedMissingMessage(sharedRes.error.message))
+    ;(err as Error & { fallbackData?: AppData; needsSetupSql?: boolean }).fallbackData = fallback
+    ;(err as Error & { needsSetupSql?: boolean }).needsSetupSql = true
+    throw err
+  }
 
   if (sharedRes.error) {
     throw new Error(sharedMissingMessage(sharedRes.error.message))
@@ -325,7 +360,6 @@ export async function loadAppDataFromSupabase(): Promise<AppData> {
       ? normalizeAppData(sharedRes.data.data as AppData)
       : null
 
-  // Backup por user / local (só para migrar treino antigo)
   let own: AppData | null = null
   try {
     const userId = await ensureAuthUserId()
@@ -341,18 +375,14 @@ export async function loadAppDataFromSupabase(): Promise<AppData> {
     console.warn('[Supabase] auth/backup opcional:', e)
   }
 
-  const local = readLegacyLocal()
-  const chosen = pickRichest(shared, own, local)
-
+  const chosen = pickRichest(shared, own, readLegacyLocal())
   writeLocalMirror(chosen)
   clearOldLegacyKeys()
 
-  // Garante linha shared com o melhor conteúdo (não rebaixa se nuvem já for rica)
   if (!shared || fillScore(chosen) > fillScore(shared)) {
     await upsertShared(chosen)
   }
 
-  // Backup por user (best-effort)
   try {
     const userId = await ensureAuthUserId()
     await supabase.from('app_state').upsert({ user_id: userId, data: chosen })
@@ -367,8 +397,19 @@ export async function saveAppDataToSupabase(data: AppData): Promise<void> {
   writeLocalMirror(data)
   if (!isSupabaseConfigured()) return
 
-  // Sempre salva no shared — é o que o outro aparelho vai ler
-  await upsertShared(data)
+  try {
+    await upsertShared(data)
+  } catch (e) {
+    // Ainda salva backup privado para não perder no aparelho
+    try {
+      const userId = await ensureAuthUserId()
+      const supabase = getSupabase()
+      await supabase.from('app_state').upsert({ user_id: userId, data })
+    } catch {
+      /* ignore */
+    }
+    throw e
+  }
 
   try {
     const userId = await ensureAuthUserId()
@@ -383,3 +424,5 @@ export async function saveAppDataToSupabase(data: AppData): Promise<void> {
 export async function reloadRichestFromCloud(): Promise<AppData> {
   return loadAppDataFromSupabase()
 }
+
+export { SHARED_SETUP_SQL }

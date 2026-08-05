@@ -1,4 +1,6 @@
--- Cole no Supabase → SQL Editor → Run (projeto qjkdtipsshfjqttbpwpj)
+/** SQL que o usuário cola no Supabase (SQL Editor → Run). */
+export const SHARED_SETUP_SQL = `-- Cole isto no Supabase → SQL Editor → Run
+-- Cria a tabela que sincroniza tablet e celular
 
 create table if not exists public.shared_app_state (
   id text primary key default 'main',
@@ -36,6 +38,7 @@ create policy "shared_app_state_delete_all"
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on public.shared_app_state to anon, authenticated;
 
+-- Copia treino já salvo (se houver) para o shared
 insert into public.shared_app_state (id, data)
 select 'main', data
 from public.app_state
@@ -44,3 +47,9 @@ limit 1
 on conflict (id) do update
   set data = excluded.data,
       updated_at = now();
+`
+
+export function isSharedTableMissingError(message: string | null | undefined): boolean {
+  if (!message) return false
+  return /shared_app_state|schema cache|Could not find the table/i.test(message)
+}

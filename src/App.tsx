@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Cloud, CloudOff, Loader2, RefreshCw } from 'lucide-react'
+import { Cloud, CloudOff, Copy, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import { Header } from './components/Header'
 import { WorkoutView } from './components/WorkoutView'
 import { ProgressView } from './components/ProgressView'
 import { EditWorkoutView } from './components/EditWorkoutView'
 import { useAppData, getActiveWorkout } from './hooks/useAppData'
 import { describeSupabaseEnv, isSupabaseConfigured } from './lib/supabase'
+import { isSharedTableMissingError, SHARED_SETUP_SQL } from './lib/sharedSetupSql'
 import type { ViewMode } from './types'
 
 export default function App() {
@@ -28,7 +29,20 @@ export default function App() {
     retrySync,
   } = useAppData()
   const [view, setView] = useState<ViewMode>('treino')
+  const [copiedSql, setCopiedSql] = useState(false)
   const envInfo = describeSupabaseEnv()
+  const needsSharedSql = isSharedTableMissingError(syncError)
+
+  async function copySetupSql() {
+    try {
+      await navigator.clipboard.writeText(SHARED_SETUP_SQL)
+      setCopiedSql(true)
+      setTimeout(() => setCopiedSql(false), 2500)
+    } catch {
+      // fallback for older browsers
+      window.prompt('Copie o SQL (Ctrl+C):', SHARED_SETUP_SQL)
+    }
+  }
 
   if (isLoading || !data) {
     return (
@@ -93,14 +107,56 @@ export default function App() {
         {syncError && (
           <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             <p>{syncError}</p>
-            <p className="mt-2 font-mono text-xs text-red-300/80">
-              diagnóstico: hasUrl={String(envInfo.hasUrl)} hasKey={String(envInfo.hasKey)} host=
-              {envInfo.urlHost ?? '—'} key={envInfo.keyPrefix ?? '—'}
-            </p>
-            <p className="mt-2 text-xs text-red-200/70">
-              Use http://localhost:5173 (npm run dev). Em produção (GitHub Pages), as variáveis do
-              .env precisa estar no build/host.
-            </p>
+            {needsSharedSql && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-300/90">
+                  Passo único (Supabase)
+                </p>
+                <ol className="list-decimal space-y-1 pl-4 text-xs text-red-100/90">
+                  <li>
+                    Abra o SQL Editor do projeto{' '}
+                    <a
+                      className="underline"
+                      href="https://supabase.com/dashboard/project/qjkdtipsshfjqttbpwpj/sql/new"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      qjkdtipsshfjqttbpwpj
+                    </a>
+                  </li>
+                  <li>Clique em “Copiar SQL” abaixo e cole no editor</li>
+                  <li>Run → espere Success → volte e “Tentar de novo”</li>
+                </ol>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => void copySetupSql()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-100 ring-1 ring-red-400/40"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {copiedSql ? 'SQL copiado!' : 'Copiar SQL'}
+                  </button>
+                  <a
+                    href="https://supabase.com/dashboard/project/qjkdtipsshfjqttbpwpj/sql/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-panel-2 px-3 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-border"
+                  >
+                    Abrir SQL Editor
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+                <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-black/40 p-2 font-mono text-[10px] text-red-100/80">
+                  {SHARED_SETUP_SQL}
+                </pre>
+              </div>
+            )}
+            {!needsSharedSql && (
+              <p className="mt-2 font-mono text-xs text-red-300/80">
+                diagnóstico: hasUrl={String(envInfo.hasUrl)} hasKey={String(envInfo.hasKey)} host=
+                {envInfo.urlHost ?? '—'} key={envInfo.keyPrefix ?? '—'}
+              </p>
+            )}
           </div>
         )}
 

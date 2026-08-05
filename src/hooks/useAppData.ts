@@ -34,36 +34,45 @@ export function useAppData() {
     setSyncError(null)
   }, [])
 
-  // Carrega do Supabase (shared = tablet + celular)
+  const bootstrap = useCallback(async () => {
+    try {
+      setSyncStatus('loading')
+      setSyncError(null)
+      canPersist.current = false
+      if (!isSupabaseConfigured()) {
+        throw new Error(
+          'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env e reinicie o app.'
+        )
+      }
+      const loaded = await loadAppDataFromSupabase()
+      applyLoaded(loaded)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Erro ao carregar dados'
+      const fallback = (e as Error & { fallbackData?: AppData }).fallbackData
+      setSyncError(msg)
+      setSyncStatus('error')
+      if (fallback) {
+        // mostra treinos locais, mas só grava se o shared voltar a funcionar
+        setData(fallback)
+        writeLocalMirror(fallback)
+        canPersist.current = true
+      } else {
+        canPersist.current = false
+        setData(structuredClone(INITIAL_DATA))
+      }
+    }
+  }, [applyLoaded])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      try {
-        setSyncStatus('loading')
-        setSyncError(null)
-        canPersist.current = false
-        if (!isSupabaseConfigured()) {
-          throw new Error(
-            'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env e reinicie o app.'
-          )
-        }
-        const loaded = await loadAppDataFromSupabase()
-        if (cancelled) return
-        applyLoaded(loaded)
-      } catch (e) {
-        if (cancelled) return
-        const msg = e instanceof Error ? e.message : 'Erro ao carregar dados'
-        setSyncError(msg)
-        setSyncStatus('error')
-        canPersist.current = false
-        // NÃO grava INITIAL na nuvem — só mostra seed local sem sobrescrever shared
-        setData(structuredClone(INITIAL_DATA))
-      }
+      if (cancelled) return
+      await bootstrap()
     })()
     return () => {
       cancelled = true
     }
-  }, [applyLoaded])
+  }, [bootstrap])
 
   // Ao voltar pro app (celular em foco), puxa o shared de novo
   useEffect(() => {
@@ -74,11 +83,11 @@ export function useAppData() {
         const fresh = await reloadRichestFromCloud()
         setData((current) => {
           if (!current) return fresh
-          // se a nuvem tem mais dados, troca; se o aparelho local for mais rico, mantém (salva depois)
           if (fillScore(fresh) > fillScore(current)) return fresh
           return current
         })
         setSyncStatus('saved')
+        setSyncError(null)
       } catch {
         /* silencioso no pull em background */
       }
@@ -390,17 +399,8 @@ export function useAppData() {
   }, [])
 
   const retrySync = useCallback(async () => {
-    if (!data) return
-    try {
-      setSyncStatus('saving')
-      await saveAppDataToSupabase(data)
-      setSyncStatus('saved')
-      setSyncError(null)
-    } catch (e) {
-      setSyncError(e instanceof Error ? e.message : 'Erro ao salvar')
-      setSyncStatus('error')
-    }
-  }, [data])
+    await bootstrap()
+  }, [bootstrap])
 
   return {
     data,
