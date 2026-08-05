@@ -12,10 +12,9 @@ dist
 dist-ssr
 *.local
 
-# Env / secrets (nunca commitar chaves reais)
-.env
-.env.*
-!.env.example
+# Env local extra (opcional)
+.env.local
+.env.*.local
 
 # Editor directories and files
 .vscode/*
