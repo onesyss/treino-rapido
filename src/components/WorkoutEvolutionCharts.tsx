@@ -22,6 +22,7 @@ import {
   weekProgressData,
   weekSummary,
 } from '../utils/stats'
+import { formatSessionOption } from '../utils/sessions'
 
 interface WorkoutEvolutionChartsProps {
   data: AppData
@@ -68,10 +69,17 @@ export function WorkoutEvolutionCharts({
   }, [workout.exercises])
 
   const daySessions = useMemo(() => {
-    return data.sessions
-      .filter((s) => s.workoutId === workout.id)
+    // todas as sessões da ficha ativa + (outros treinos com data) para o filtro de dia
+    const ofActive = data.sessions.filter((s) => s.workoutId === workout.id)
+    const others = data.sessions.filter((s) => s.workoutId !== workout.id)
+    return [...ofActive, ...others]
       .slice()
-      .sort((a, b) => b.date.localeCompare(a.date) || b.label.localeCompare(a.label))
+      .sort(
+        (a, b) =>
+          b.date.localeCompare(a.date) ||
+          a.workoutId.localeCompare(b.workoutId) ||
+          b.label.localeCompare(a.label)
+      )
   }, [data.sessions, workout.id])
 
   const [daySessionId, setDaySessionId] = useState(sessionId)
@@ -150,22 +158,31 @@ export function WorkoutEvolutionCharts({
             </div>
           </div>
 
-          <label className="mt-3 block max-w-xs">
+          <label className="mt-3 block max-w-full">
             <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Data
+              Data / sessão
             </span>
             <select
               value={effectiveDaySessionId}
               onChange={(e) => setDaySessionId(e.target.value)}
-              className="field w-full text-sm"
+              className="field w-full max-w-md text-sm"
             >
-              {daySessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {formatFullDate(s.date)}
-                  {s.label ? ` — ${s.label}` : ''}
-                </option>
-              ))}
+              {daySessions.length === 0 ? (
+                <option value="">Sem sessões ainda</option>
+              ) : (
+                daySessions.map((s) => {
+                  const w = data.workouts.find((x) => x.id === s.workoutId)
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {formatSessionOption(s.date, s.label, w?.shortLabel)}
+                    </option>
+                  )
+                })
+              )}
             </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Inclui dias anteriores e outras fichas preenchidas
+            </p>
           </label>
 
           <MetricChips
@@ -479,12 +496,6 @@ function formatDayMonth(iso: string) {
   const [, m, d] = iso.split('-')
   if (!m || !d) return iso
   return `${d}/${m}`
-}
-
-function formatFullDate(iso: string) {
-  const [y, m, d] = iso.split('-')
-  if (!y || !m || !d) return iso
-  return `${d}/${m}/${y}`
 }
 
 function Empty({ msg }: { msg: string }) {

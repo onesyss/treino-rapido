@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react'
 import type { AppData, Exercise } from '../types'
 import { getActiveSession, getActiveWorkout, getPreviousWeight } from '../hooks/useAppData'
 import { percentIncrease } from '../utils/stats'
+import { formatSessionOption } from '../utils/sessions'
 import { GROUP_STYLE, GroupIcon } from '../utils/icons'
 import { HowToModal } from './HowToModal'
 import { WorkoutEvolutionCharts } from './WorkoutEvolutionCharts'
@@ -52,7 +53,11 @@ export function WorkoutView({
   const [howTo, setHowTo] = useState<Exercise | null>(null)
 
   const workoutSessions = useMemo(
-    () => data.sessions.filter((s) => s.workoutId === workout.id),
+    () =>
+      data.sessions
+        .filter((s) => s.workoutId === workout.id)
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date) || b.label.localeCompare(a.label)),
     [data.sessions, workout.id]
   )
 
@@ -126,7 +131,7 @@ export function WorkoutView({
           >
             {workoutSessions.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.date} — {s.label}
+                {formatSessionOption(s.date, s.label)}
               </option>
             ))}
           </select>

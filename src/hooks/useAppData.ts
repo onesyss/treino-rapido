@@ -8,6 +8,7 @@ import {
   writeLocalMirror,
 } from '../lib/appDataStore'
 import { isSupabaseConfigured } from '../lib/supabase'
+import { ensureSessionsForToday } from '../utils/sessions'
 import type {
   AppData,
   Exercise,
@@ -27,8 +28,9 @@ export function useAppData() {
   const canPersist = useRef(false)
 
   const applyLoaded = useCallback((loaded: AppData) => {
-    setData(loaded)
-    writeLocalMirror(loaded)
+    const withDays = ensureSessionsForToday(loaded)
+    setData(withDays)
+    writeLocalMirror(withDays)
     canPersist.current = true
     setSyncStatus('ready')
     setSyncError(null)
@@ -52,13 +54,13 @@ export function useAppData() {
       setSyncError(msg)
       setSyncStatus('error')
       if (fallback) {
-        // mostra treinos locais, mas só grava se o shared voltar a funcionar
-        setData(fallback)
-        writeLocalMirror(fallback)
+        const withDays = ensureSessionsForToday(fallback)
+        setData(withDays)
+        writeLocalMirror(withDays)
         canPersist.current = true
       } else {
         canPersist.current = false
-        setData(structuredClone(INITIAL_DATA))
+        setData(ensureSessionsForToday(structuredClone(INITIAL_DATA)))
       }
     }
   }, [applyLoaded])
@@ -132,27 +134,37 @@ export function useAppData() {
       if (!d) return d
       const workout = d.workouts.find((w) => w.id === workoutId)
       if (!workout) return d
-      const sessionsOf = d.sessions.filter((s) => s.workoutId === workoutId)
-      let activeSessionId = d.activeSessionId
+      const today = new Date().toISOString().slice(0, 10)
       let sessions = d.sessions
-      if (!sessionsOf.length) {
+      let sessionsOf = sessions.filter((s) => s.workoutId === workoutId)
+
+      if (!sessionsOf.some((s) => s.date === today)) {
+        const prev = [...sessionsOf].sort((a, b) => a.date.localeCompare(b.date)).at(-1)
         const neu: WorkoutSession = {
           id: crypto.randomUUID(),
           workoutId,
-          date: new Date().toISOString().slice(0, 10),
+          date: today,
           label: 'Sessão de hoje',
-          entries: workout.exercises.map((ex) => ({
-            exerciseId: ex.id,
-            performedReps: null,
-            currentWeight: null,
-            cardioType: null,
-          })),
+          entries: workout.exercises.map((ex) => {
+            const last = prev?.entries.find((e) => e.exerciseId === ex.id)
+            return {
+              exerciseId: ex.id,
+              performedReps: null,
+              currentWeight: last?.currentWeight ?? null,
+              cardioType: last?.cardioType ?? null,
+            }
+          }),
         }
-        sessions = [...d.sessions, neu]
-        activeSessionId = neu.id
-      } else {
-        activeSessionId = sessionsOf[sessionsOf.length - 1].id
+        sessions = [...sessions, neu]
+        sessionsOf = sessions.filter((s) => s.workoutId === workoutId)
       }
+
+      const todaySession = sessionsOf.find((s) => s.date === today)
+      const activeSessionId =
+        todaySession?.id ??
+        [...sessionsOf].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.id ??
+        d.activeSessionId
+
       return { ...d, activeWorkoutId: workoutId, sessions, activeSessionId }
     })
   }, [])
@@ -346,12 +358,15 @@ export function useAppData() {
       if (!d) return d
       const workout = getWorkout(d)
       const sessionsOf = d.sessions.filter((s) => s.workoutId === workout.id)
-      const prev = sessionsOf[sessionsOf.length - 1]
+      const prev = [...sessionsOf].sort((a, b) => a.date.localeCompare(b.date)).at(-1)
+      const today = new Date().toISOString().slice(0, 10)
       const newSession: WorkoutSession = {
         id: crypto.randomUUID(),
         workoutId: workout.id,
-        date: new Date().toISOString().slice(0, 10),
-        label: label ?? `Sessão ${sessionsOf.length + 1}`,
+        date: today,
+        label: label ?? (sessionsOf.some((s) => s.date === today)
+          ? `Sessão ${sessionsOf.filter((s) => s.date === today).length + 1}`
+          : 'Sessão de hoje'),
         entries: workout.exercises.map((ex) => {
           const last = prev?.entries.find((e) => e.exerciseId === ex.id)
           return {
