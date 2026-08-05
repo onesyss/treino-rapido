@@ -1,22 +1,33 @@
-# Supabase — treino igual no tablet e no celular
+# Supabase — treino em qualquer aparelho
 
-## Obrigatório (1x)
-No **SQL Editor** do Supabase, rode **na ordem**:
+O app **não consegue criar tabelas sozinho** (a chave do front é só leitura/escrita de
+dados, não de schema). Você cria **uma vez** no SQL Editor.
 
-1. `supabase/schema.sql` (cria tudo)
-2. `supabase/migrate-shared.sql` (copia treinos antigos → shared)
+## 1. Criar as colunas no banco (1x)
 
-Ou só o `migrate-shared.sql` se a tabela `app_state` já existir.
+1. Abra: https://supabase.com/dashboard/project/qjkdtipsshfjqttbpwpj/sql/new  
+2. Cole o conteúdo de `supabase/migrate-shared.sql` (ou o SQL do botão no app)  
+3. **Run**
 
-## Como funciona
-- **Um único** registro: `shared_app_state` com `id = main`
-- Tablet salva → nuvem → celular carrega o **mesmo** JSON
-- Ao reabrir o app, puxa de novo a nuvem
-- Aparelho vazio **não apaga** o treino preenchido
+Isso cria a tabela **`treino_sync`** com colunas:
 
-## Conferir
-- Badge no app: **Salvo na nuvem**
-- Se aparecer erro de `shared_app_state`, o SQL ainda não rodou
+| Coluna | Conteúdo |
+|--------|----------|
+| `id` | sempre `main` (mesmo treino pra todos) |
+| `profile_name` | nome do atleta |
+| `active_workout_id` | ficha ativa |
+| `active_session_id` | sessão ativa |
+| `workouts` | treinos + exercícios (JSON) |
+| `sessions` | sessões + pesos/reps (JSON) |
+| `updated_at` | última gravação |
 
-## Auth
-Ative **Authentication → Providers → Anonymous**.
+## 2. Auth anônimo
+Authentication → Providers → **Anonymous** ativo.
+
+## 3. Como o app usa
+- Salva/lê **sempre** a linha `id = main` → tablet e celular iguais
+- Espelha no `localStorage` do aparelho
+- Se a tabela não existir, o app mostra o botão **Copiar SQL**
+
+## 4. Conferir no Dashboard
+Table Editor → `treino_sync` → deve haver 1 linha após o primeiro save.

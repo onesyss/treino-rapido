@@ -114,18 +114,27 @@ export default function App() {
                 </p>
                 <ol className="list-decimal space-y-1 pl-4 text-xs text-red-100/90">
                   <li>
-                    Abra o SQL Editor do projeto{' '}
+                    Abra o SQL Editor:{' '}
                     <a
                       className="underline"
                       href="https://supabase.com/dashboard/project/qjkdtipsshfjqttbpwpj/sql/new"
                       target="_blank"
                       rel="noreferrer"
                     >
-                      qjkdtipsshfjqttbpwpj
+                      projeto Supabase
                     </a>
                   </li>
-                  <li>Clique em “Copiar SQL” abaixo e cole no editor</li>
-                  <li>Run → espere Success → volte e “Tentar de novo”</li>
+                  <li>
+                    Clique em <strong>Copiar SQL</strong> e cole no editor (cria a tabela{' '}
+                    <code className="text-red-50">treino_sync</code> com colunas de perfil, treinos e
+                    sessões)
+                  </li>
+                  <li>
+                    Clique em <strong>Run</strong> → espere Success → volte e <strong>Tentar de novo</strong>
+                  </li>
+                  <li>
+                    Preencha no tablet → badge “Salvo na nuvem” → abra no celular (mesmos dados)
+                  </li>
                 </ol>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button

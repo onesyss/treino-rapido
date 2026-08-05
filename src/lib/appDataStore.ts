@@ -14,7 +14,8 @@ const LOCAL_LEGACY_KEYS = [
 ]
 
 const LOCAL_MIRROR_KEY = 'treino-rapido-v9'
-const SHARED_STATE_ID = 'main'
+/** Linha única no Postgres — todos os aparelhos leem/gravam isto. */
+const SYNC_ROW_ID = 'main'
 
 const WORKOUT_OMBROS_ID = 'wk-ombros'
 const WORKOUT_PEITO_TRICEPS_ID = 'wk-peito-triceps'
@@ -280,27 +281,53 @@ export async function ensureAuthUserId(): Promise<string> {
   return data.user.id
 }
 
-function sharedMissingMessage(detail: string): string {
+function setupMissingMessage(detail: string): string {
   return (
-    'Falta criar a tabela shared_app_state no Supabase. ' +
-    'Abra o projeto qjkdtipsshfjqttbpwpj → SQL Editor → cole o SQL do botão “Copiar SQL” e clique Run. ' +
-    'Espere 10s e toque em “Tentar de novo”. ' +
+    'Falta criar as tabelas no Supabase (treino_sync). ' +
+    'Abra o SQL Editor do projeto, cole o SQL do botão “Copiar SQL” e clique Run. ' +
+    'Isso cria as COLUNAS no banco (perfil, treinos, sessões) para tablet e celular usarem o mesmo dado. ' +
     `Detalhe: ${detail}`
   )
 }
 
-function isMissingSharedTable(err: { message?: string; code?: string } | null): boolean {
+function isMissingTable(err: { message?: string; code?: string } | null): boolean {
   if (!err) return false
   return isSharedTableMissingError(err.message) || err.code === 'PGRST205' || err.code === '42P01'
 }
 
-async function upsertShared(data: AppData): Promise<void> {
+function rowToAppData(row: {
+  profile_name?: string
+  active_workout_id?: string
+  active_session_id?: string | null
+  workouts?: unknown
+  sessions?: unknown
+}): AppData | null {
+  const raw: AppData = {
+    profileName: row.profile_name || 'Marlon Miranda',
+    activeWorkoutId: row.active_workout_id || '',
+    activeSessionId: row.active_session_id ?? null,
+    workouts: (row.workouts as AppData['workouts']) ?? [],
+    sessions: (row.sessions as AppData['sessions']) ?? [],
+  }
+  if (!isValidStored(raw)) return null
+  return normalizeAppData(raw)
+}
+
+function appDataToRow(data: AppData) {
+  return {
+    id: SYNC_ROW_ID,
+    profile_name: data.profileName,
+    active_workout_id: data.activeWorkoutId,
+    active_session_id: data.activeSessionId,
+    workouts: data.workouts,
+    sessions: data.sessions,
+  }
+}
+
+async function upsertTreinoSync(data: AppData): Promise<void> {
   const supabase = getSupabase()
-  const { error } = await supabase.from('shared_app_state').upsert({
-    id: SHARED_STATE_ID,
-    data,
-  })
-  if (error) throw new Error(sharedMissingMessage(error.message))
+  const { error } = await supabase.from('treino_sync').upsert(appDataToRow(data))
+  if (error) throw new Error(setupMissingMessage(error.message))
 }
 
 async function loadPrivateAndLocal(): Promise<AppData> {
@@ -319,12 +346,28 @@ async function loadPrivateAndLocal(): Promise<AppData> {
   } catch (e) {
     console.warn('[Supabase] auth/backup:', e)
   }
-  return pickRichest(own, readLegacyLocal())
+
+  // legado shared_app_state
+  let shared: AppData | null = null
+  try {
+    const r = await supabase
+      .from('shared_app_state')
+      .select('data')
+      .eq('id', SYNC_ROW_ID)
+      .maybeSingle()
+    if (!r.error && r.data?.data && isValidStored(r.data.data)) {
+      shared = normalizeAppData(r.data.data as AppData)
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return pickRichest(own, shared, readLegacyLocal())
 }
 
 /**
- * Fonte única: shared_app_state (id=main) = mesmo treino em tablet e celular.
- * Se a tabela não existir, usa backup local/privado e devolve erro para o app mostrar o SQL.
+ * Fonte única multi-aparelho: tabela treino_sync (colunas profile_name, workouts, sessions…).
+ * id = 'main' → tablet e celular leem/gravam o MESMO registro.
  */
 export async function loadAppDataFromSupabase(): Promise<AppData> {
   if (!isSupabaseConfigured()) {
@@ -335,32 +378,28 @@ export async function loadAppDataFromSupabase(): Promise<AppData> {
 
   const supabase = getSupabase()
 
-  const sharedRes = await supabase
-    .from('shared_app_state')
-    .select('data')
-    .eq('id', SHARED_STATE_ID)
+  const syncRes = await supabase
+    .from('treino_sync')
+    .select('profile_name, active_workout_id, active_session_id, workouts, sessions, updated_at')
+    .eq('id', SYNC_ROW_ID)
     .maybeSingle()
 
-  if (sharedRes.error && isMissingSharedTable(sharedRes.error)) {
-    // App continua com dados locais/privados, mas sinaliza SQL obrigatório
+  if (syncRes.error && isMissingTable(syncRes.error)) {
     const fallback = await loadPrivateAndLocal()
     writeLocalMirror(fallback)
-    const err = new Error(sharedMissingMessage(sharedRes.error.message))
-    ;(err as Error & { fallbackData?: AppData; needsSetupSql?: boolean }).fallbackData = fallback
-    ;(err as Error & { needsSetupSql?: boolean }).needsSetupSql = true
+    const err = new Error(setupMissingMessage(syncRes.error.message))
+    ;(err as Error & { fallbackData?: AppData }).fallbackData = fallback
     throw err
   }
 
-  if (sharedRes.error) {
-    throw new Error(sharedMissingMessage(sharedRes.error.message))
+  if (syncRes.error) {
+    throw new Error(setupMissingMessage(syncRes.error.message))
   }
 
-  const shared =
-    sharedRes.data?.data && isValidStored(sharedRes.data.data)
-      ? normalizeAppData(sharedRes.data.data as AppData)
-      : null
+  const fromCols = syncRes.data ? rowToAppData(syncRes.data) : null
 
   let own: AppData | null = null
+  let sharedLegacy: AppData | null = null
   try {
     const userId = await ensureAuthUserId()
     const ownRes = await supabase
@@ -375,14 +414,35 @@ export async function loadAppDataFromSupabase(): Promise<AppData> {
     console.warn('[Supabase] auth/backup opcional:', e)
   }
 
-  const chosen = pickRichest(shared, own, readLegacyLocal())
+  try {
+    const r = await supabase
+      .from('shared_app_state')
+      .select('data')
+      .eq('id', SYNC_ROW_ID)
+      .maybeSingle()
+    if (!r.error && r.data?.data && isValidStored(r.data.data)) {
+      sharedLegacy = normalizeAppData(r.data.data as AppData)
+    }
+  } catch {
+    /* optional */
+  }
+
+  const chosen = pickRichest(fromCols, own, sharedLegacy, readLegacyLocal())
   writeLocalMirror(chosen)
   clearOldLegacyKeys()
 
-  if (!shared || fillScore(chosen) > fillScore(shared)) {
-    await upsertShared(chosen)
+  // Grava nas colunas se a linha estava vazia ou se o local/legacy é mais rico
+  const cloudScore = fillScore(fromCols)
+  if (!fromCols || fillScore(chosen) > cloudScore) {
+    await upsertTreinoSync(chosen)
   }
 
+  // espelhos best-effort
+  try {
+    await supabase.from('shared_app_state').upsert({ id: SYNC_ROW_ID, data: chosen })
+  } catch {
+    /* ignore */
+  }
   try {
     const userId = await ensureAuthUserId()
     await supabase.from('app_state').upsert({ user_id: userId, data: chosen })
@@ -397,26 +457,20 @@ export async function saveAppDataToSupabase(data: AppData): Promise<void> {
   writeLocalMirror(data)
   if (!isSupabaseConfigured()) return
 
-  try {
-    await upsertShared(data)
-  } catch (e) {
-    // Ainda salva backup privado para não perder no aparelho
-    try {
-      const userId = await ensureAuthUserId()
-      const supabase = getSupabase()
-      await supabase.from('app_state').upsert({ user_id: userId, data })
-    } catch {
-      /* ignore */
-    }
-    throw e
-  }
+  // Grava nas COLUNAS da tabela treino_sync (multi-aparelho)
+  await upsertTreinoSync(data)
 
+  const supabase = getSupabase()
+  try {
+    await supabase.from('shared_app_state').upsert({ id: SYNC_ROW_ID, data })
+  } catch {
+    /* legado */
+  }
   try {
     const userId = await ensureAuthUserId()
-    const supabase = getSupabase()
     await supabase.from('app_state').upsert({ user_id: userId, data })
   } catch {
-    /* backup opcional */
+    /* opcional */
   }
 }
 
