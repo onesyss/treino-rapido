@@ -2,20 +2,23 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import { ensureAuthUserId, loadAppDataFromSupabase } from './lib/appDataStore'
-import { getSupabase, isSupabaseConfigured } from './lib/supabase'
+import { describeSupabaseEnv, getSupabase, isSupabaseConfigured } from './lib/supabase'
 import './index.css'
 
 async function logSupabaseConnection() {
-  const url = import.meta.env.VITE_SUPABASE_URL
-  const hasKey = Boolean(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)
+  const info = describeSupabaseEnv()
 
   console.log('%c[Supabase] checando conexão…', 'color:#60a5fa;font-weight:bold')
-  console.log('[Supabase] VITE_SUPABASE_URL =', url || '(vazio)')
-  console.log('[Supabase] VITE_SUPABASE_PUBLISHABLE_KEY =', hasKey ? 'definida ✓' : 'faltando ✗')
-  console.log('[Supabase] isSupabaseConfigured =', isSupabaseConfigured)
+  console.log('[Supabase] env diagnostic =', info)
+  console.log('[Supabase] isSupabaseConfigured =', isSupabaseConfigured())
 
-  if (!isSupabaseConfigured) {
-    console.error('[Supabase] NÃO configurado — preencha o .env e reinicie o npm run dev')
+  if (!isSupabaseConfigured()) {
+    console.error(
+      '[Supabase] NÃO configurado — confira .env na pasta do projeto e reinicie npm run dev'
+    )
+    console.error(
+      'Exemplo:\nVITE_SUPABASE_URL=https://xxxx.supabase.co\nVITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...'
+    )
     return
   }
 

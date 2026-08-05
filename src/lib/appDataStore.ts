@@ -215,7 +215,7 @@ export async function ensureAuthUserId(): Promise<string> {
  * Se não houver linha, migra localStorage legado uma vez e salva no cloud.
  */
 export async function loadAppDataFromSupabase(): Promise<AppData> {
-  if (!isSupabaseConfigured) {
+  if (!isSupabaseConfigured()) {
     return normalizeAppData(structuredClone(INITIAL_DATA))
   }
 
@@ -253,7 +253,7 @@ export async function loadAppDataFromSupabase(): Promise<AppData> {
 }
 
 export async function saveAppDataToSupabase(data: AppData): Promise<void> {
-  if (!isSupabaseConfigured) return
+  if (!isSupabaseConfigured()) return
 
   const supabase = getSupabase()
   const userId = await ensureAuthUserId()

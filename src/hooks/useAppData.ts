@@ -29,9 +29,9 @@ export function useAppData() {
       try {
         setSyncStatus('loading')
         setSyncError(null)
-        if (!isSupabaseConfigured) {
+        if (!isSupabaseConfigured()) {
           throw new Error(
-            'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env (veja .env.example).'
+            'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env (veja .env.example) e reinicie o npm run dev.'
           )
         }
         const loaded = await loadAppDataFromSupabase()
@@ -57,7 +57,7 @@ export function useAppData() {
   // Persistência com debounce no Supabase
   useEffect(() => {
     if (!data || !bootstrapped.current) return
-    if (!isSupabaseConfigured) return
+    if (!isSupabaseConfigured()) return
     if (syncStatus === 'loading') return
 
     if (saveTimer.current) clearTimeout(saveTimer.current)
