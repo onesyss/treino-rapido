@@ -4,12 +4,16 @@ import type { AppData, Exercise, WorkoutProgram } from '../types'
 import { getSupabase, isSupabaseConfigured } from './supabase'
 
 const LOCAL_LEGACY_KEYS = [
+  'treino-rapido-v9',
   'treino-rapido-v8',
   'treino-rapido-v7',
   'treino-rapido-v6',
   'treino-rapido-v5',
   'treino-rapido-v1',
 ]
+
+const LOCAL_MIRROR_KEY = 'treino-rapido-v9'
+const SHARED_STATE_ID = 'main'
 
 const WORKOUT_OMBROS_ID = 'wk-ombros'
 const WORKOUT_PEITO_TRICEPS_ID = 'wk-peito-triceps'
@@ -206,8 +210,17 @@ function readLegacyLocal(): AppData | null {
   return null
 }
 
+function writeLocalMirror(data: AppData) {
+  try {
+    localStorage.setItem(LOCAL_MIRROR_KEY, JSON.stringify(data))
+  } catch {
+    /* ignore */
+  }
+}
+
 function clearLegacyLocal() {
   for (const key of LOCAL_LEGACY_KEYS) {
+    if (key === LOCAL_MIRROR_KEY) continue
     try {
       localStorage.removeItem(key)
     } catch {
@@ -238,57 +251,99 @@ export async function ensureAuthUserId(): Promise<string> {
 }
 
 /**
- * Carrega o estado no Supabase.
- * Se não houver linha, migra localStorage legado uma vez e salva no cloud.
+ * Carrega o estado:
+ * 1) shared_app_state (mesmo treino em todos os aparelhos)
+ * 2) app_state do usuário anônimo (legado)
+ * 3) localStorage / seed
+ * Sempre espelha no localStorage e promove para shared quando possível.
  */
 export async function loadAppDataFromSupabase(): Promise<AppData> {
   if (!isSupabaseConfigured()) {
-    return normalizeAppData(structuredClone(INITIAL_DATA))
+    const local = readLegacyLocal()
+    const data = normalizeAppData(local ?? structuredClone(INITIAL_DATA))
+    writeLocalMirror(data)
+    return data
   }
 
   const supabase = getSupabase()
   const userId = await ensureAuthUserId()
 
-  const { data: row, error } = await supabase
+  // 1) Estado compartilhado
+  const sharedRes = await supabase
+    .from('shared_app_state')
+    .select('data')
+    .eq('id', SHARED_STATE_ID)
+    .maybeSingle()
+
+  if (!sharedRes.error && sharedRes.data?.data && isValidStored(sharedRes.data.data)) {
+    const data = normalizeAppData(sharedRes.data.data as AppData)
+    writeLocalMirror(data)
+    // mantém backup por user
+    await supabase.from('app_state').upsert({ user_id: userId, data })
+    return data
+  }
+
+  // 2) Linha do usuário (browser que já salvava antes)
+  const ownRes = await supabase
     .from('app_state')
     .select('data')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (error) throw error
+  if (ownRes.error) throw ownRes.error
 
-  const payload = row?.data as AppData | undefined
-  if (payload && isValidStored(payload)) {
-    return normalizeAppData(payload)
+  let payload: AppData | null = null
+  if (ownRes.data?.data && isValidStored(ownRes.data.data)) {
+    payload = normalizeAppData(ownRes.data.data as AppData)
+  } else {
+    const legacy = readLegacyLocal()
+    payload = normalizeAppData(legacy ?? structuredClone(INITIAL_DATA))
   }
 
-  // Primeira vez: migrar do local ou usar seed
-  const legacy = readLegacyLocal()
-  const initial = normalizeAppData(legacy ?? structuredClone(INITIAL_DATA))
+  writeLocalMirror(payload)
+
+  // 3) Promove para shared (se a tabela existir)
+  if (!sharedRes.error || !/shared_app_state|schema cache|does not exist|PGRST/i.test(
+    String(sharedRes.error?.message ?? sharedRes.error?.code ?? '')
+  )) {
+    const { error: sharedUpsertError } = await supabase.from('shared_app_state').upsert({
+      id: SHARED_STATE_ID,
+      data: payload,
+    })
+    if (sharedUpsertError) {
+      // tabela ainda não criada: ok, usa só app_state
+      console.warn('[Supabase] shared_app_state indisponível:', sharedUpsertError.message)
+    }
+  }
 
   const { error: upsertError } = await supabase.from('app_state').upsert({
     user_id: userId,
-    data: initial,
+    data: payload,
   })
-
   if (upsertError) throw upsertError
 
-  // Migração concluída: remove cache local antigo
   clearLegacyLocal()
-
-  return initial
+  return payload
 }
 
 export async function saveAppDataToSupabase(data: AppData): Promise<void> {
+  writeLocalMirror(data)
   if (!isSupabaseConfigured()) return
 
   const supabase = getSupabase()
   const userId = await ensureAuthUserId()
 
+  const shared = await supabase.from('shared_app_state').upsert({
+    id: SHARED_STATE_ID,
+    data,
+  })
+  if (shared.error) {
+    console.warn('[Supabase] save shared:', shared.error.message)
+  }
+
   const { error } = await supabase.from('app_state').upsert({
     user_id: userId,
     data,
   })
-
   if (error) throw error
 }

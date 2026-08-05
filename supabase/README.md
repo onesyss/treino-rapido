@@ -2,34 +2,44 @@
 
 ## 1. Criar projeto
 1. Acesse [https://supabase.com](https://supabase.com) e crie um projeto.
-2. Abra **SQL Editor** e execute o arquivo `supabase/schema.sql`.
+2. Abra **SQL Editor** e execute o arquivo `supabase/schema.sql` **inteiro**.
 
 ## 2. Auth anônimo
 1. Vá em **Authentication → Providers**.
-2. Ative **Anonymous Sign-Ins** (necessário para o app salvar sem login com e-mail).
+2. Ative **Anonymous Sign-Ins**.
 
 ## 3. Variáveis de ambiente (React + Vite)
-1. Em **Project Settings → API**, copie:
-   - Project URL
-   - **Publishable key** (`sb_publishable_...`)
-2. Na raiz do projeto, arquivo `.env`:
+No `.env` (já versionado com as chaves publicáveis):
 
 ```env
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
-3. Reinicie: `npm run dev` (o Vite só lê o `.env` no start)
+## 4. Como os dados ficam iguais em todos os lugares
+O app usa a tabela **`shared_app_state`** (id = `main`):
+- mesmo treino no localhost, Netlify, GitHub Pages, celular
+- também espelha em `localStorage` e em `app_state` (backup por user)
 
-## 4. Comportamento
-- O app **não usa mais localStorage** para persistir o treino.
-- Ao abrir: autenticação anônima + carrega `app_state` do usuário.
-- Se existir dado antigo no browser (v5–v8), **migra uma vez** para o Supabase e limpa o local.
-- Alterações são salvas na nuvem com debounce (~500 ms).
+### Se você JÁ preencheu em algum browser
+No SQL Editor do Supabase, rode (depois do schema):
 
-## 5. Tabela
+```sql
+insert into public.shared_app_state (id, data)
+select 'main', data
+from public.app_state
+order by updated_at desc nulls last
+limit 1
+on conflict (id) do update
+  set data = excluded.data,
+      updated_at = now();
+```
+
+Isso copia a linha mais recente do treino preenchido para o estado compartilhado.
+Depois abra o app em qualquer URL: os pesos/reps já devem aparecer.
+
+## 5. Tabelas
 | Tabela | Uso |
 |--------|-----|
-| `app_state` | `user_id` + `data` (JSONB com workouts, sessões, entries) |
-
-RLS: cada usuário só acessa a própria linha.
+| `shared_app_state` | treino único compartilhado |
+| `app_state` | backup por usuário anônimo |
