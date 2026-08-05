@@ -32,6 +32,8 @@ interface WorkoutViewProps {
   onAddSession: () => void
   onSetActiveSession: (id: string) => void
   onDeleteSession: (id: string) => void
+  onAddCardio: () => void
+  onRemoveCardio: (exerciseId: string) => void
   onEditClick: () => void
 }
 
@@ -41,6 +43,8 @@ export function WorkoutView({
   onAddSession,
   onSetActiveSession,
   onDeleteSession,
+  onAddCardio,
+  onRemoveCardio,
   onEditClick,
 }: WorkoutViewProps) {
   const workout = getActiveWorkout(data)
@@ -53,6 +57,10 @@ export function WorkoutView({
   )
 
   const rows = workout.exercises
+  const cardioCount = rows.filter(
+    (ex) =>
+      ex.muscleGroup === 'Cardio' || ex.name.toLowerCase().startsWith('cardio')
+  ).length
 
   if (!session) {
     return (
@@ -130,6 +138,15 @@ export function WorkoutView({
             <Plus className="h-4 w-4" />
             Nova sessão
           </button>
+          <button
+            type="button"
+            onClick={onAddCardio}
+            className="btn-ghost"
+            title="Registre um segundo cardio no dia (ex.: esteira + vôlei)"
+          >
+            <Plus className="h-4 w-4" />
+            Cardio
+          </button>
           {workoutSessions.length > 1 && (
             <button
               type="button"
@@ -141,7 +158,6 @@ export function WorkoutView({
             </button>
           )}
         </div>
-
         <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
@@ -153,7 +169,8 @@ export function WorkoutView({
                 <th className="px-3 py-3 font-semibold">Rep. realizadas</th>
                 <th className="px-3 py-3 font-semibold">Peso ant.</th>
                 <th className="px-3 py-3 font-semibold">Peso atual</th>
-                <th className="px-5 py-3 font-semibold">% aumento</th>
+                <th className="px-3 py-3 font-semibold">% aumento</th>
+                <th className="px-5 py-3 font-semibold" />
               </tr>
             </thead>
             <tbody>
@@ -167,9 +184,15 @@ export function WorkoutView({
                 const hitTarget = performed != null && performed >= ex.targetReps
                 const style = GROUP_STYLE[ex.muscleGroup] ?? GROUP_STYLE.Outro
                 const isCardio =
-                  ex.muscleGroup === 'Cardio' || ex.name.toLowerCase() === 'cardio'
+                  ex.muscleGroup === 'Cardio' || ex.name.toLowerCase().startsWith('cardio')
                 const unit = isCardio ? 'km' : 'kg'
                 const loadStep = isCardio ? 0.1 : 0.5
+                const displayName =
+                  isCardio && cardioType.trim()
+                    ? cardioType.trim()
+                    : isCardio
+                      ? ex.name
+                      : ex.name
 
                 return (
                   <tr key={ex.id} className="table-row-glow border-b border-border/70 transition">
@@ -200,7 +223,7 @@ export function WorkoutView({
                             onClick={() => setHowTo(ex)}
                             title="Ver execução"
                           >
-                            {isCardio ? 'Cardio' : ex.name}
+                            {displayName}
                           </button>
                           {!isCardio && ex.warmup && (
                             <div className="mt-0.5 text-xs text-slate-500">{ex.warmup}</div>
@@ -238,6 +261,9 @@ export function WorkoutView({
                               </datalist>
                               <div className="text-[11px] text-slate-500">
                                 min · km opcional
+                                {cardioCount > 1 && (
+                                  <span className="ml-1 text-slate-600">· {ex.name}</span>
+                                )}
                               </div>
                             </div>
                           )}
@@ -311,7 +337,7 @@ export function WorkoutView({
                         <span className="text-xs text-slate-500">{unit}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-3 py-3.5">
                       {pct != null ? (
                         <span
                           className={[
@@ -331,13 +357,24 @@ export function WorkoutView({
                         <span className="text-slate-600">—</span>
                       )}
                     </td>
+                    <td className="px-5 py-3.5">
+                      {isCardio && cardioCount > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveCardio(ex.id)}
+                          className="rounded-lg p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-300"
+                          title="Remover este cardio"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
         </div>
-
         {howTo && <HowToModal exercise={howTo} onClose={() => setHowTo(null)} />}
       </section>
 

@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { CalendarRange, Dumbbell, Sun, Weight } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { CalendarRange, ChevronLeft, ChevronRight, Dumbbell, Sun, Weight } from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -13,9 +13,12 @@ import {
   YAxis,
 } from 'recharts'
 import type { AppData } from '../types'
+import { getActiveWorkout } from '../hooks/useAppData'
 import {
   dayProgressData,
   daySummary,
+  shiftDateISO,
+  startOfWeekISO,
   weekProgressData,
   weekSummary,
 } from '../utils/stats'
@@ -38,18 +41,88 @@ const CHART_A = '#3b82f6'
 const CHART_B = '#ef4444'
 const CHART_C = '#22d3ee'
 
+type DayMetric = 'weight' | 'reps' | 'volume'
+type WeekMetric = 'volume' | 'reps' | 'pesoMedio'
+
+const DAY_METRICS: { id: DayMetric; label: string }[] = [
+  { id: 'weight', label: 'Peso' },
+  { id: 'reps', label: 'Reps' },
+  { id: 'volume', label: 'Volume' },
+]
+
+const WEEK_METRICS: { id: WeekMetric; label: string }[] = [
+  { id: 'volume', label: 'Volume' },
+  { id: 'reps', label: 'Reps' },
+  { id: 'pesoMedio', label: 'Peso médio' },
+]
+
 export function WorkoutEvolutionCharts({
   data,
   sessionId,
   sessionDate,
 }: WorkoutEvolutionChartsProps) {
-  const dayData = useMemo(() => dayProgressData(data, sessionId), [data, sessionId])
-  const weekData = useMemo(() => weekProgressData(data, sessionDate), [data, sessionDate])
-  const day = useMemo(() => daySummary(data, sessionId), [data, sessionId])
+  const workout = getActiveWorkout(data)
+  const muscleGroups = useMemo(() => {
+    const set = new Set(workout.exercises.map((ex) => ex.muscleGroup))
+    return Array.from(set)
+  }, [workout.exercises])
+
+  const daySessions = useMemo(() => {
+    return data.sessions
+      .filter((s) => s.workoutId === workout.id)
+      .slice()
+      .sort((a, b) => b.date.localeCompare(a.date) || b.label.localeCompare(a.label))
+  }, [data.sessions, workout.id])
+
+  const [daySessionId, setDaySessionId] = useState(sessionId)
+  const [dayMetrics, setDayMetrics] = useState<DayMetric[]>(['weight', 'reps', 'volume'])
+
+  useEffect(() => {
+    setDaySessionId(sessionId)
+  }, [sessionId])
+
+  const effectiveDaySessionId = daySessions.some((s) => s.id === daySessionId)
+    ? daySessionId
+    : sessionId
+
+  const [weekExerciseId, setWeekExerciseId] = useState('')
+  const [weekMuscle, setWeekMuscle] = useState('')
+  const [weekMetrics, setWeekMetrics] = useState<WeekMetric[]>(['volume', 'reps', 'pesoMedio'])
+  const [weekOffset, setWeekOffset] = useState(0)
+
+  const weekOptions = useMemo(
+    () => ({
+      exerciseId: weekExerciseId || null,
+      muscleGroup: !weekExerciseId && weekMuscle ? weekMuscle : null,
+    }),
+    [weekExerciseId, weekMuscle]
+  )
+
+  const weekRefDate = useMemo(
+    () => shiftDateISO(sessionDate, weekOffset * 7),
+    [sessionDate, weekOffset]
+  )
+  const weekStart = startOfWeekISO(weekRefDate)
+  const weekEnd = shiftDateISO(weekStart, 6)
+
+  const dayData = useMemo(
+    () => dayProgressData(data, effectiveDaySessionId),
+    [data, effectiveDaySessionId]
+  )
+  const weekData = useMemo(
+    () => weekProgressData(data, weekRefDate, weekOptions),
+    [data, weekRefDate, weekOptions]
+  )
+  const day = useMemo(
+    () => daySummary(data, effectiveDaySessionId),
+    [data, effectiveDaySessionId]
+  )
   const week = useMemo(() => weekSummary(weekData), [weekData])
 
   const dayHasData = dayData.some((d) => d.filled)
-  const weekHasData = weekData.some((d) => d.sessoes > 0)
+  const weekHasData = weekData.some((d) => d.sessoes > 0 || d.volume > 0 || d.reps > 0)
+  const activeDayMetrics = dayMetrics.length ? dayMetrics : (['weight'] as DayMetric[])
+  const activeWeekMetrics = weekMetrics.length ? weekMetrics : (['volume'] as WeekMetric[])
 
   return (
     <section className="space-y-5">
@@ -62,7 +135,7 @@ export function WorkoutEvolutionCharts({
               </span>
               <div>
                 <h3 className="font-display text-lg font-bold text-white">Evolução do dia</h3>
-                <p className="text-sm text-slate-500">Carga e volume por exercício nesta sessão</p>
+                <p className="text-sm text-slate-500">Carga e volume por exercício na data escolhida</p>
               </div>
             </div>
             <div className="text-right text-xs text-slate-500">
@@ -77,8 +150,32 @@ export function WorkoutEvolutionCharts({
             </div>
           </div>
 
+          <label className="mt-3 block max-w-xs">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Data
+            </span>
+            <select
+              value={effectiveDaySessionId}
+              onChange={(e) => setDaySessionId(e.target.value)}
+              className="field w-full text-sm"
+            >
+              {daySessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {formatFullDate(s.date)}
+                  {s.label ? ` — ${s.label}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <MetricChips
+            options={DAY_METRICS}
+            selected={dayMetrics}
+            onToggle={(id) => setDayMetrics((prev) => toggleMetric(prev, id))}
+          />
+
           {!dayHasData ? (
-            <Empty msg="Preencha peso e reps nos exercícios acima para ver o gráfico do dia." />
+            <Empty msg="Preencha peso e reps na sessão dessa data para ver o gráfico do dia." />
           ) : (
             <div className="mt-4 h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -112,9 +209,15 @@ export function WorkoutEvolutionCharts({
                       v === 'weight' ? 'Peso (kg)' : v === 'reps' ? 'Reps' : 'Volume'
                     }
                   />
-                  <Bar dataKey="weight" fill={CHART_A} radius={[4, 4, 0, 0]} name="weight" />
-                  <Bar dataKey="reps" fill={CHART_B} radius={[4, 4, 0, 0]} name="reps" />
-                  <Bar dataKey="volume" fill={CHART_C} radius={[4, 4, 0, 0]} name="volume" />
+                  {activeDayMetrics.includes('weight') && (
+                    <Bar dataKey="weight" fill={CHART_A} radius={[4, 4, 0, 0]} name="weight" />
+                  )}
+                  {activeDayMetrics.includes('reps') && (
+                    <Bar dataKey="reps" fill={CHART_B} radius={[4, 4, 0, 0]} name="reps" />
+                  )}
+                  {activeDayMetrics.includes('volume') && (
+                    <Bar dataKey="volume" fill={CHART_C} radius={[4, 4, 0, 0]} name="volume" />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -129,7 +232,10 @@ export function WorkoutEvolutionCharts({
               </span>
               <div>
                 <h3 className="font-display text-lg font-bold text-white">Evolução da semana</h3>
-                <p className="text-sm text-slate-500">Volume e reps de segunda a domingo</p>
+                <p className="text-sm text-slate-500">
+                  {formatDayMonth(weekStart)} – {formatDayMonth(weekEnd)}
+                  {weekOffset === 0 ? ' · esta semana' : weekOffset < 0 ? ' · semanas anteriores' : ''}
+                </p>
               </div>
             </div>
             <div className="text-right text-xs text-slate-500">
@@ -140,8 +246,59 @@ export function WorkoutEvolutionCharts({
             </div>
           </div>
 
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setWeekOffset((o) => o - 1)}
+              className="btn-ghost h-9 px-2.5 text-xs"
+              aria-label="Semana anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Ant.
+            </button>
+            <button
+              type="button"
+              onClick={() => setWeekOffset(0)}
+              disabled={weekOffset === 0}
+              className="btn-ghost h-9 px-2.5 text-xs disabled:opacity-40"
+            >
+              Esta semana
+            </button>
+            <button
+              type="button"
+              onClick={() => setWeekOffset((o) => Math.min(0, o + 1))}
+              disabled={weekOffset >= 0}
+              className="btn-ghost h-9 px-2.5 text-xs disabled:opacity-40"
+              aria-label="Semana seguinte"
+            >
+              Próx.
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <ChartFilters
+            exerciseId={weekExerciseId}
+            muscleGroup={weekMuscle}
+            exercises={workout.exercises}
+            muscleGroups={muscleGroups}
+            onExerciseChange={(id) => {
+              setWeekExerciseId(id)
+              if (id) setWeekMuscle('')
+            }}
+            onMuscleChange={(g) => {
+              setWeekMuscle(g)
+              if (g) setWeekExerciseId('')
+            }}
+          />
+
+          <MetricChips
+            options={WEEK_METRICS}
+            selected={weekMetrics}
+            onToggle={(id) => setWeekMetrics((prev) => toggleMetric(prev, id))}
+          />
+
           {!weekHasData ? (
-            <Empty msg="Ainda sem sessões nesta semana. Preencha o treino e adicione novas sessões." />
+            <Empty msg="Sem dados nesta semana para o filtro atual. Escolha outra semana ou limpe o filtro." />
           ) : (
             <div className="mt-4 h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -174,31 +331,37 @@ export function WorkoutEvolutionCharts({
                       v === 'volume' ? 'Volume' : v === 'reps' ? 'Reps' : 'Peso médio'
                     }
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="volume"
-                    stroke={CHART_A}
-                    fill="url(#weekVol)"
-                    strokeWidth={2}
-                    name="volume"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="reps"
-                    stroke={CHART_B}
-                    fill="transparent"
-                    strokeWidth={2}
-                    name="reps"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="pesoMedio"
-                    stroke={CHART_C}
-                    fill="transparent"
-                    strokeWidth={2}
-                    strokeDasharray="4 4"
-                    name="pesoMedio"
-                  />
+                  {activeWeekMetrics.includes('volume') && (
+                    <Area
+                      type="monotone"
+                      dataKey="volume"
+                      stroke={CHART_A}
+                      fill="url(#weekVol)"
+                      strokeWidth={2}
+                      name="volume"
+                    />
+                  )}
+                  {activeWeekMetrics.includes('reps') && (
+                    <Area
+                      type="monotone"
+                      dataKey="reps"
+                      stroke={CHART_B}
+                      fill="transparent"
+                      strokeWidth={2}
+                      name="reps"
+                    />
+                  )}
+                  {activeWeekMetrics.includes('pesoMedio') && (
+                    <Area
+                      type="monotone"
+                      dataKey="pesoMedio"
+                      stroke={CHART_C}
+                      fill="transparent"
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      name="pesoMedio"
+                    />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -207,6 +370,121 @@ export function WorkoutEvolutionCharts({
       </div>
     </section>
   )
+}
+
+function ChartFilters({
+  exerciseId,
+  muscleGroup,
+  exercises,
+  muscleGroups,
+  onExerciseChange,
+  onMuscleChange,
+}: {
+  exerciseId: string
+  muscleGroup: string
+  exercises: { id: string; name: string; muscleGroup: string }[]
+  muscleGroups: string[]
+  onExerciseChange: (id: string) => void
+  onMuscleChange: (group: string) => void
+}) {
+  const filteredExercises = muscleGroup
+    ? exercises.filter((ex) => ex.muscleGroup === muscleGroup)
+    : exercises
+
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Grupo
+        </span>
+        <select
+          value={muscleGroup}
+          onChange={(e) => onMuscleChange(e.target.value)}
+          className="field w-full text-sm"
+        >
+          <option value="">Todos os grupos</option>
+          {muscleGroups.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Exercício
+        </span>
+        <select
+          value={exerciseId}
+          onChange={(e) => onExerciseChange(e.target.value)}
+          className="field w-full text-sm"
+        >
+          <option value="">Todos os exercícios</option>
+          {filteredExercises.map((ex) => (
+            <option key={ex.id} value={ex.id}>
+              {ex.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  )
+}
+
+function MetricChips<T extends string>({
+  options,
+  selected,
+  onToggle,
+}: {
+  options: { id: T; label: string }[]
+  selected: T[]
+  onToggle: (id: T) => void
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      <span className="mr-1 self-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        Métricas
+      </span>
+      {options.map((opt) => {
+        const active = selected.includes(opt.id)
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onToggle(opt.id)}
+            className={[
+              'rounded-lg px-2.5 py-1 text-xs font-medium transition ring-1',
+              active
+                ? 'bg-blue-500/20 text-blue-200 ring-blue-500/40'
+                : 'bg-panel-2 text-slate-400 ring-border hover:text-slate-200',
+            ].join(' ')}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function toggleMetric<T extends string>(prev: T[], id: T): T[] {
+  if (prev.includes(id)) {
+    const next = prev.filter((m) => m !== id)
+    return next.length ? next : prev
+  }
+  return [...prev, id]
+}
+
+function formatDayMonth(iso: string) {
+  const [, m, d] = iso.split('-')
+  if (!m || !d) return iso
+  return `${d}/${m}`
+}
+
+function formatFullDate(iso: string) {
+  const [y, m, d] = iso.split('-')
+  if (!y || !m || !d) return iso
+  return `${d}/${m}/${y}`
 }
 
 function Empty({ msg }: { msg: string }) {

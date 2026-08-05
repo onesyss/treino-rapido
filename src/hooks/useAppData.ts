@@ -172,6 +172,104 @@ export function useAppData() {
     })
   }, [])
 
+  const addCardio = useCallback(() => {
+    setData((d) => {
+      if (!d) return d
+      const workoutId = d.activeWorkoutId
+      const workout = d.workouts.find((w) => w.id === workoutId)
+      if (!workout) return d
+
+      const cardioCount = workout.exercises.filter(
+        (ex) =>
+          ex.muscleGroup === 'Cardio' ||
+          ex.name.toLowerCase().startsWith('cardio')
+      ).length
+      const template = workout.exercises.find(
+        (ex) =>
+          ex.muscleGroup === 'Cardio' ||
+          ex.name.toLowerCase().startsWith('cardio')
+      )
+      const label = cardioCount === 0 ? 'Cardio' : `Cardio ${cardioCount + 1}`
+      const neu: Exercise = {
+        id: crypto.randomUUID(),
+        name: label,
+        muscleGroup: 'Cardio',
+        sets: 1,
+        targetReps: template?.targetReps ?? 20,
+        motion: 'cardio',
+        steps: template?.steps ?? [
+          'Escolha o cardio do dia (esteira, bike, vôlei, etc.).',
+          'Faça o tempo que quiser e anote os minutos.',
+          'Se quiser, anote também a distância em km.',
+          'Finalize no ritmo que preferir.',
+        ],
+        tips:
+          template?.tips ??
+          'Escreva o tipo (esteira, bike, vôlei…). Anote minutos e, se quiser, os km.',
+        gifUrl: template?.gifUrl,
+        gifCredit: template?.gifCredit,
+      }
+
+      const exercises = [...workout.exercises, neu]
+      const workouts = d.workouts.map((w) =>
+        w.id === workoutId ? { ...w, exercises } : w
+      )
+      const sessions = d.sessions.map((s) => {
+        if (s.workoutId !== workoutId) return s
+        if (s.entries.some((e) => e.exerciseId === neu.id)) return s
+        return {
+          ...s,
+          entries: [
+            ...s.entries,
+            {
+              exerciseId: neu.id,
+              performedReps: null as number | null,
+              currentWeight: null as number | null,
+              cardioType: null as string | null,
+            },
+          ],
+        }
+      })
+      return { ...d, workouts, sessions }
+    })
+  }, [])
+
+  const removeCardio = useCallback((exerciseId: string) => {
+    setData((d) => {
+      if (!d) return d
+      const workoutId = d.activeWorkoutId
+      const workout = d.workouts.find((w) => w.id === workoutId)
+      if (!workout) return d
+      const target = workout.exercises.find((ex) => ex.id === exerciseId)
+      if (
+        !target ||
+        (target.muscleGroup !== 'Cardio' &&
+          !target.name.toLowerCase().startsWith('cardio'))
+      ) {
+        return d
+      }
+      const cardios = workout.exercises.filter(
+        (ex) =>
+          ex.muscleGroup === 'Cardio' ||
+          ex.name.toLowerCase().startsWith('cardio')
+      )
+      if (cardios.length <= 1) return d
+
+      const exercises = workout.exercises.filter((ex) => ex.id !== exerciseId)
+      const workouts = d.workouts.map((w) =>
+        w.id === workoutId ? { ...w, exercises } : w
+      )
+      const sessions = d.sessions.map((s) => {
+        if (s.workoutId !== workoutId) return s
+        return {
+          ...s,
+          entries: s.entries.filter((e) => e.exerciseId !== exerciseId),
+        }
+      })
+      return { ...d, workouts, sessions }
+    })
+  }, [])
+
   const updateEntry = useCallback(
     (sessionId: string, exerciseId: string, patch: Partial<SessionEntry>) => {
       setData((d) =>
@@ -274,6 +372,8 @@ export function useAppData() {
     updateProfile,
     updateActiveWorkoutMeta,
     setExercises,
+    addCardio,
+    removeCardio,
     updateEntry,
     addSession,
     setActiveSession,

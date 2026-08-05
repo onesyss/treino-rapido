@@ -18,6 +18,8 @@ export default function App() {
     updateProfile,
     updateActiveWorkoutMeta,
     setExercises,
+    addCardio,
+    removeCardio,
     updateEntry,
     addSession,
     setActiveSession,
@@ -120,6 +122,8 @@ export default function App() {
               onAddSession={addSession}
               onSetActiveSession={setActiveSession}
               onDeleteSession={deleteSession}
+              onAddCardio={addCardio}
+              onRemoveCardio={removeCardio}
               onEditClick={() => setView('editar')}
             />
           )}

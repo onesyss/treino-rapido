@@ -103,6 +103,37 @@ export function EditWorkoutView({
     setExercises((list) => [...list, neu])
   }
 
+  function addCardioEx() {
+    const cardioCount = exercises.filter(
+      (ex) =>
+        ex.muscleGroup === 'Cardio' || ex.name.toLowerCase().startsWith('cardio')
+    ).length
+    const template = exercises.find(
+      (ex) =>
+        ex.muscleGroup === 'Cardio' || ex.name.toLowerCase().startsWith('cardio')
+    )
+    const neu: Exercise = {
+      id: crypto.randomUUID(),
+      name: cardioCount === 0 ? 'Cardio' : `Cardio ${cardioCount + 1}`,
+      muscleGroup: 'Cardio',
+      sets: 1,
+      targetReps: template?.targetReps ?? 20,
+      motion: 'cardio',
+      gifUrl: template?.gifUrl ?? '',
+      gifCredit: template?.gifCredit,
+      steps: template?.steps ?? [
+        'Escolha o cardio do dia (esteira, bike, vôlei, etc.).',
+        'Faça o tempo que quiser e anote os minutos.',
+        'Se quiser, anote também a distância em km.',
+        'Finalize no ritmo que preferir.',
+      ],
+      tips:
+        template?.tips ??
+        'Escreva o tipo (esteira, bike, vôlei…). Anote minutos e, se quiser, os km.',
+    }
+    setExercises((list) => [...list, neu])
+  }
+
   return (
     <div className="space-y-5">
       <section className="card p-5">
@@ -181,14 +212,24 @@ export function EditWorkoutView({
       <section className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h3 className="font-semibold text-white">Exercícios</h3>
-          <button
-            type="button"
-            onClick={addEx}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-panel-2 px-3 py-2 text-sm font-semibold text-slate-200 ring-1 ring-border"
-          >
-            <Plus className="h-4 w-4" />
-            Adicionar
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={addCardioEx}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-panel-2 px-3 py-2 text-sm font-semibold text-slate-200 ring-1 ring-border"
+            >
+              <Plus className="h-4 w-4" />
+              Cardio
+            </button>
+            <button
+              type="button"
+              onClick={addEx}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-panel-2 px-3 py-2 text-sm font-semibold text-slate-200 ring-1 ring-border"
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar
+            </button>
+          </div>
         </div>
 
         <div className="divide-y divide-border">

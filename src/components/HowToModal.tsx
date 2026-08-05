@@ -22,7 +22,8 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
   const credit =
     gifForName(exercise.name)?.gifCredit ?? exercise.gifCredit
   const isCardio =
-    exercise.muscleGroup === 'Cardio' || exercise.name.toLowerCase() === 'cardio'
+    exercise.muscleGroup === 'Cardio' ||
+    exercise.name.toLowerCase().startsWith('cardio')
 
   return (
     <div

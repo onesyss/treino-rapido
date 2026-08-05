@@ -196,7 +196,14 @@ export const GIF_BY_NAME: Record<string, GifEntry> = {
 }
 
 export function gifForName(name: string): GifEntry | undefined {
-  return GIF_BY_NAME[normalizeExerciseName(name)]
+  const key = normalizeExerciseName(name)
+  if (key === 'cardio' || key.startsWith('cardio ')) return GIF_BY_NAME.cardio
+  return GIF_BY_NAME[key]
+}
+
+export function isCardioExerciseName(name: string): boolean {
+  const key = normalizeExerciseName(name)
+  return key === 'cardio' || key.startsWith('cardio ')
 }
 
 export const GIF_SUSPENSAO = GIF_BY_NAME['suspensao na barra'].gifUrl

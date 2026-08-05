@@ -67,13 +67,24 @@ export function overallVolumeSeries(data: AppData) {
     }))
 }
 
-export function dayProgressData(data: AppData, sessionId: string) {
+export function dayProgressData(
+  data: AppData,
+  sessionId: string,
+  options?: { exerciseId?: string | null; muscleGroup?: string | null }
+) {
   const session = data.sessions.find((s) => s.id === sessionId)
   if (!session) return []
   const workout = data.workouts.find((w) => w.id === session.workoutId)
   if (!workout) return []
 
-  return workout.exercises.map((ex) => {
+  let exercises = workout.exercises
+  if (options?.exerciseId) {
+    exercises = exercises.filter((ex) => ex.id === options.exerciseId)
+  } else if (options?.muscleGroup) {
+    exercises = exercises.filter((ex) => ex.muscleGroup === options.muscleGroup)
+  }
+
+  return exercises.map((ex) => {
     const entry = session.entries.find((e) => e.exerciseId === ex.id)
     const weight = entry?.currentWeight ?? 0
     const reps = entry?.performedReps ?? 0
@@ -84,8 +95,10 @@ export function dayProgressData(data: AppData, sessionId: string) {
     )
     const filled = entry?.currentWeight != null || entry?.performedReps != null
     return {
+      exerciseId: ex.id,
       name: ex.name,
       shortName: ex.name.length > 12 ? `${ex.name.slice(0, 11)}…` : ex.name,
+      muscleGroup: ex.muscleGroup,
       weight,
       reps,
       volume,
@@ -116,9 +129,38 @@ export function startOfWeekISO(dateISO: string): string {
 
 const WEEKDAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
 
-export function weekProgressData(data: AppData, refDateISO: string) {
+export function shiftDateISO(dateISO: string, days: number): string {
+  const d = parseLocalDate(dateISO)
+  d.setDate(d.getDate() + days)
+  return toISODate(d)
+}
+
+export function weekProgressData(
+  data: AppData,
+  refDateISO: string,
+  options?: { exerciseId?: string | null; muscleGroup?: string | null }
+) {
   const start = parseLocalDate(startOfWeekISO(refDateISO))
   const workoutId = data.activeWorkoutId
+  const workout = data.workouts.find((w) => w.id === workoutId)
+  const exerciseFilter = options?.exerciseId
+  const muscleFilter = options?.muscleGroup
+
+  const exerciseIds = (() => {
+    if (!workout) return null as Set<string> | null
+    if (exerciseFilter) return new Set([exerciseFilter])
+    if (muscleFilter) {
+      return new Set(
+        workout.exercises.filter((ex) => ex.muscleGroup === muscleFilter).map((ex) => ex.id)
+      )
+    }
+    return null
+  })()
+
+  const entryMatches = (exerciseId: string) => {
+    if (!exerciseIds) return true
+    return exerciseIds.has(exerciseId)
+  }
 
   return Array.from({ length: 7 }, (_, i) => {
     const day = new Date(start)
@@ -127,27 +169,31 @@ export function weekProgressData(data: AppData, refDateISO: string) {
     const sessionsThatDay = data.sessions.filter(
       (s) => s.date === iso && s.workoutId === workoutId
     )
-    const volume = sessionsThatDay.reduce((sum, s) => sum + volumeForSession(data, s.id), 0)
 
-    let avgWeight = 0
-    if (sessionsThatDay.length > 0) {
-      let total = 0
-      let count = 0
-      for (const s of sessionsThatDay) {
-        for (const e of s.entries) {
-          if (e.currentWeight != null && e.currentWeight > 0) {
-            total += e.currentWeight
-            count++
-          }
+    let volume = 0
+    let totalWeight = 0
+    let weightCount = 0
+    let totalReps = 0
+    let sessionsWithMatch = 0
+
+    for (const s of sessionsThatDay) {
+      let matched = false
+      for (const e of s.entries) {
+        if (!entryMatches(e.exerciseId)) continue
+        if (e.currentWeight == null && e.performedReps == null) continue
+        matched = true
+        const ex = workout?.exercises.find((x) => x.id === e.exerciseId)
+        volume += volumeForSessionEntry(ex, e.currentWeight, e.performedReps)
+        if (e.currentWeight != null && e.currentWeight > 0) {
+          totalWeight += e.currentWeight
+          weightCount++
         }
+        totalReps += e.performedReps ?? 0
       }
-      avgWeight = count ? total / count : 0
+      if (matched) sessionsWithMatch++
     }
 
-    const totalReps = sessionsThatDay.reduce(
-      (sum, s) => sum + s.entries.reduce((a, e) => a + (e.performedReps ?? 0), 0),
-      0
-    )
+    const avgWeight = weightCount ? totalWeight / weightCount : 0
 
     return {
       day: WEEKDAY_LABELS[i],
@@ -156,13 +202,17 @@ export function weekProgressData(data: AppData, refDateISO: string) {
       volume: Math.round(volume),
       pesoMedio: Math.round(avgWeight * 10) / 10,
       reps: totalReps,
-      sessoes: sessionsThatDay.length,
+      sessoes: sessionsWithMatch,
     }
   })
 }
 
-export function daySummary(data: AppData, sessionId: string) {
-  const points = dayProgressData(data, sessionId)
+export function daySummary(
+  data: AppData,
+  sessionId: string,
+  options?: { exerciseId?: string | null; muscleGroup?: string | null }
+) {
+  const points = dayProgressData(data, sessionId, options)
   const filled = points.filter((p) => p.filled).length
   const volume = points.reduce((s, p) => s + p.volume, 0)
   const totalReps = points.reduce((s, p) => s + p.reps, 0)

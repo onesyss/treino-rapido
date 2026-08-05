@@ -1,37 +1,63 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
+const VIRTUAL_ID = 'virtual:supabase-env'
+const RESOLVED_VIRTUAL_ID = '\0' + VIRTUAL_ID
+
+function supabaseEnvPlugin(url: string, key: string): Plugin {
+  return {
+    name: 'supabase-env-virtual',
+    resolveId(id) {
+      if (id === VIRTUAL_ID) return RESOLVED_VIRTUAL_ID
+    },
+    load(id) {
+      if (id !== RESOLVED_VIRTUAL_ID) return
+      return `
+export const SUPABASE_URL = ${JSON.stringify(url)};
+export const SUPABASE_KEY = ${JSON.stringify(key)};
+export const HAS_SUPABASE_ENV = ${JSON.stringify(Boolean(url && key))};
+`
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => {
-  // Garante leitura do .env na pasta do projeto (cwd pode variar)
-  const env = loadEnv(mode, root, 'VITE_')
-  const url = env.VITE_SUPABASE_URL ?? ''
-  const publishable =
-    env.VITE_SUPABASE_PUBLISHABLE_KEY ?? env.VITE_SUPABASE_ANON_KEY ?? ''
-  const anon = env.VITE_SUPABASE_ANON_KEY ?? env.VITE_SUPABASE_PUBLISHABLE_KEY ?? ''
+  const env = loadEnv(mode, root, '')
+  const url = (env.VITE_SUPABASE_URL ?? '').trim()
+  const key = (
+    env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+    env.VITE_SUPABASE_ANON_KEY ??
+    ''
+  ).trim()
 
-  if (mode === 'development') {
-    console.log('[vite] root =', root)
-    console.log('[vite] VITE_SUPABASE_URL =', url ? `${url.slice(0, 32)}…` : '(vazio)')
-    console.log(
-      '[vite] PUBLISHABLE_KEY =',
-      publishable ? `${publishable.slice(0, 18)}…` : '(vazio)'
+  console.log('[vite] root =', root)
+  console.log('[vite] mode =', mode)
+  console.log('[vite] VITE_SUPABASE_URL =', url || '(VAZIO ✗)')
+  console.log(
+    '[vite] KEY =',
+    key ? `${key.slice(0, 20)}… (${key.length} chars)` : '(VAZIO ✗)'
+  )
+
+  if (!url || !key) {
+    console.warn(
+      '[vite] ATENÇÃO: .env sem URL/KEY. Coloque o .env em:',
+      path.join(root, '.env')
     )
   }
 
   return {
     root,
     envDir: root,
-    plugins: [react(), tailwindcss()],
-    // força replace no bundle (evita import.meta.env vazio em alguns casos)
+    plugins: [react(), tailwindcss(), supabaseEnvPlugin(url, key)],
+    // redunda com virtual module — ambos alimentados pelo mesmo loadEnv
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(url),
-      'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(publishable),
-      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(anon),
+      'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(key),
+      'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(key),
     },
   }
 })

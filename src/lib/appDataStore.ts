@@ -1,4 +1,4 @@
-import { GIF_CREDIT_PRIMARY, gifForName, normalizeExerciseName } from '../data/gifs'
+import { GIF_CREDIT_PRIMARY, gifForName, isCardioExerciseName, normalizeExerciseName } from '../data/gifs'
 import { INITIAL_DATA } from '../data/initialData'
 import type { AppData, Exercise, WorkoutProgram } from '../types'
 import { getSupabase, isSupabaseConfigured } from './supabase'
@@ -15,6 +15,10 @@ const WORKOUT_OMBROS_ID = 'wk-ombros'
 const WORKOUT_PEITO_TRICEPS_ID = 'wk-peito-triceps'
 const WORKOUT_COSTAS_BICEPS_ID = 'wk-costas-biceps'
 
+function isCardioExercise(ex: Pick<Exercise, 'name' | 'muscleGroup'>): boolean {
+  return ex.muscleGroup === 'Cardio' || isCardioExerciseName(ex.name)
+}
+
 function isValidStored(data: unknown): data is AppData {
   return (
     typeof data === 'object' &&
@@ -29,6 +33,9 @@ function repairExerciseGifs(ex: Exercise): Exercise {
   let next = ex
   if (ex.name.toLowerCase().includes('panturrilha')) {
     next = { ...next, muscleGroup: 'Pernas' as const }
+  }
+  if (isCardioExercise(next)) {
+    next = { ...next, muscleGroup: 'Cardio', motion: 'cardio' }
   }
   if (catalog?.gifUrl && next.gifUrl !== catalog.gifUrl) {
     next = {
@@ -46,13 +53,31 @@ function repairExerciseGifs(ex: Exercise): Exercise {
   return next
 }
 
+function repairCardioFromSeed(ex: Exercise, seedCardio: Exercise | undefined): Exercise {
+  if (!seedCardio) return repairExerciseGifs(ex)
+  return repairExerciseGifs({
+    ...ex,
+    // preserva "Cardio 2", etc.
+    name: ex.name?.trim() || 'Cardio',
+    notes: ex.notes,
+    tips: seedCardio.tips,
+    steps: seedCardio.steps,
+    muscleGroup: 'Cardio',
+    motion: 'cardio',
+    sets: seedCardio.sets,
+    targetReps: seedCardio.targetReps,
+  })
+}
+
 function reconcileFromSeed(stored: WorkoutProgram, seed: WorkoutProgram): WorkoutProgram {
   const byName = new Map(
     stored.exercises.map((e) => [normalizeExerciseName(e.name), e] as const)
   )
+  const usedIds = new Set<string>()
   const exercises = seed.exercises.map((se) => {
     const existing = byName.get(normalizeExerciseName(se.name))
     if (!existing) return structuredClone(se)
+    usedIds.add(existing.id)
     const base = {
       ...existing,
       name: se.name,
@@ -66,14 +91,24 @@ function reconcileFromSeed(stored: WorkoutProgram, seed: WorkoutProgram): Workou
       motion: se.motion,
     }
     if (normalizeExerciseName(se.name) === 'cardio') {
-      return repairExerciseGifs({
-        ...base,
-        name: 'Cardio',
-        notes: undefined,
-      })
+      return repairCardioFromSeed(
+        { ...base, name: existing.name || 'Cardio', notes: existing.notes },
+        se
+      )
     }
     return repairExerciseGifs(base)
   })
+
+  // preserva cardios extras (Cardio 2, 3…) adicionados pelo usuário
+  const extraCardios = stored.exercises
+    .filter((e) => isCardioExercise(e) && !usedIds.has(e.id))
+    .map((e) =>
+      repairCardioFromSeed(
+        e,
+        seed.exercises.find((se) => normalizeExerciseName(se.name) === 'cardio')
+      )
+    )
+
   return {
     ...stored,
     title: seed.title,
@@ -81,7 +116,7 @@ function reconcileFromSeed(stored: WorkoutProgram, seed: WorkoutProgram): Workou
     warmupNote: seed.warmupNote,
     coreNote: seed.coreNote,
     goals: seed.goals,
-    exercises,
+    exercises: [...exercises, ...extraCardios],
   }
 }
 
@@ -104,26 +139,18 @@ export function normalizeAppData(raw: AppData): AppData {
       return reconcileFromSeed(w, seed)
     }
     const have = new Set(w.exercises.map((e) => normalizeExerciseName(e.name)))
-    const missing = seed.exercises.filter(
-      (se) => !have.has(normalizeExerciseName(se.name))
+    const hasAnyCardio = w.exercises.some(isCardioExercise)
+    const missing = seed.exercises.filter((se) => {
+      const n = normalizeExerciseName(se.name)
+      if (n === 'cardio') return !hasAnyCardio
+      return !have.has(n)
+    })
+    const seedCardio = seed.exercises.find(
+      (se) => normalizeExerciseName(se.name) === 'cardio'
     )
     const exercises = w.exercises.map((ex) => {
-      if (normalizeExerciseName(ex.name) !== 'cardio') return repairExerciseGifs(ex)
-      const seedCardio = seed.exercises.find(
-        (se) => normalizeExerciseName(se.name) === 'cardio'
-      )
-      if (!seedCardio) return repairExerciseGifs(ex)
-      return repairExerciseGifs({
-        ...ex,
-        name: 'Cardio',
-        notes: undefined,
-        tips: seedCardio.tips,
-        steps: seedCardio.steps,
-        muscleGroup: 'Cardio',
-        motion: seedCardio.motion,
-        sets: seedCardio.sets,
-        targetReps: seedCardio.targetReps,
-      })
+      if (!isCardioExercise(ex)) return repairExerciseGifs(ex)
+      return repairCardioFromSeed(ex, seedCardio)
     })
     if (!missing.length) return { ...w, exercises }
     return {
