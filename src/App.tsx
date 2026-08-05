@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { Cloud, CloudOff, Copy, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import { Copy, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import { Header } from './components/Header'
 import { WorkoutView } from './components/WorkoutView'
 import { ProgressView } from './components/ProgressView'
 import { EditWorkoutView } from './components/EditWorkoutView'
 import { useAppData, getActiveWorkout } from './hooks/useAppData'
-import { describeSupabaseEnv, isSupabaseConfigured } from './lib/supabase'
+import { describeSupabaseEnv } from './lib/supabase'
 import { isSharedTableMissingError, SHARED_SETUP_SQL } from './lib/sharedSetupSql'
 import type { ViewMode } from './types'
 
@@ -49,13 +49,7 @@ export default function App() {
       <div className="app-shell flex min-h-screen items-center justify-center px-4">
         <div className="card max-w-sm p-8 text-center">
           <Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-400" />
-          <p className="mt-4 font-display text-lg font-semibold text-white">
-            Conectando ao Supabase…
-          </p>
-          <p className="mt-1 text-sm text-slate-400">Carregando treino do Marlon Miranda</p>
-          <p className="mt-3 font-mono text-[11px] text-slate-500">
-            env: url={envInfo.hasUrl ? 'ok' : 'no'} key={envInfo.hasKey ? 'ok' : 'no'}
-          </p>
+          <p className="mt-4 font-display text-lg font-semibold text-white">Carregando dados</p>
         </div>
       </div>
     )
@@ -64,45 +58,17 @@ export default function App() {
   const activeWorkout = getActiveWorkout(data)
   const sessionCount = data.sessions.filter((s) => s.workoutId === activeWorkout.id).length
 
-  const statusLabel =
-    syncStatus === 'saving'
-      ? 'Salvando…'
-      : syncStatus === 'saved'
-        ? 'Salvo na nuvem'
-        : syncStatus === 'error'
-          ? 'Erro ao sync'
-          : !isSupabaseConfigured()
-            ? 'Sem .env'
-            : 'Online'
-
   return (
     <div className="app-shell">
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-3 flex flex-wrap items-center justify-end gap-2 text-xs">
-          <span
-            className={[
-              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ring-1',
-              syncStatus === 'error' || !isSupabaseConfigured()
-                ? 'bg-red-500/15 text-red-300 ring-red-500/40'
-                : 'bg-blue-500/10 text-blue-300 ring-blue-500/30',
-            ].join(' ')}
-          >
-            {syncStatus === 'saving' || syncStatus === 'loading' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : syncStatus === 'error' || !isSupabaseConfigured() ? (
-              <CloudOff className="h-3.5 w-3.5" />
-            ) : (
-              <Cloud className="h-3.5 w-3.5" />
-            )}
-            {statusLabel}
-          </span>
-          {syncStatus === 'error' && (
+        {syncStatus === 'error' && (
+          <div className="mb-3 flex flex-wrap items-center justify-end gap-2 text-xs">
             <button type="button" onClick={() => void retrySync()} className="btn-ghost text-xs">
               <RefreshCw className="h-3.5 w-3.5" />
               Tentar de novo
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {syncError && (
           <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -130,11 +96,10 @@ export default function App() {
                     sessões)
                   </li>
                   <li>
-                    Clique em <strong>Run</strong> → espere Success → volte e <strong>Tentar de novo</strong>
+                    Clique em <strong>Run</strong> → espere Success → volte e{' '}
+                    <strong>Tentar de novo</strong>
                   </li>
-                  <li>
-                    Preencha no tablet → badge “Salvo na nuvem” → abra no celular (mesmos dados)
-                  </li>
+                  <li>Preencha no tablet → abra no celular (mesmos dados)</li>
                 </ol>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
@@ -206,7 +171,6 @@ export default function App() {
 
         <footer className="app-footer mt-10 pb-6 text-center text-xs">
           <span>Treino de Marlon Miranda</span>
-          <span className="mt-1 block text-slate-600">Dados no Supabase</span>
         </footer>
       </div>
     </div>
