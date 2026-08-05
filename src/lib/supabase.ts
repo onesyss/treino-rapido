@@ -45,7 +45,7 @@ export function describeSupabaseEnv(): {
     urlHost,
     keyPrefix: key ? `${key.slice(0, 18)}…` : null,
     configured: getSupabaseConfig() != null,
-    source: HAS_SUPABASE_ENV ? 'virtual+env' : 'empty',
+    source: url && key ? 'configured' : 'empty',
   }
 }
 
