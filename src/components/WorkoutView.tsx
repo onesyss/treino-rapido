@@ -23,7 +23,11 @@ interface WorkoutViewProps {
   onUpdateEntry: (
     sessionId: string,
     exerciseId: string,
-    patch: { performedReps?: number | null; currentWeight?: number | null }
+    patch: {
+      performedReps?: number | null
+      currentWeight?: number | null
+      cardioType?: string | null
+    }
   ) => void
   onAddSession: () => void
   onSetActiveSession: (id: string) => void
@@ -158,9 +162,14 @@ export function WorkoutView({
                 const prev = getPreviousWeight(data, ex.id, session.id)
                 const current = entry?.currentWeight ?? null
                 const performed = entry?.performedReps ?? null
+                const cardioType = entry?.cardioType ?? ''
                 const pct = percentIncrease(prev, current)
                 const hitTarget = performed != null && performed >= ex.targetReps
                 const style = GROUP_STYLE[ex.muscleGroup] ?? GROUP_STYLE.Outro
+                const isCardio =
+                  ex.muscleGroup === 'Cardio' || ex.name.toLowerCase() === 'cardio'
+                const unit = isCardio ? 'km' : 'kg'
+                const loadStep = isCardio ? 0.1 : 0.5
 
                 return (
                   <tr key={ex.id} className="table-row-glow border-b border-border/70 transition">
@@ -174,7 +183,7 @@ export function WorkoutView({
                         ].join(' ')}
                       >
                         <GroupIcon group={ex.muscleGroup} className="h-3.5 w-3.5" />
-                        {ex.muscleGroup}
+                        {isCardio ? 'Cardio' : ex.muscleGroup}
                       </span>
                     </td>
                     <td className="px-3 py-3.5">
@@ -191,25 +200,63 @@ export function WorkoutView({
                             onClick={() => setHowTo(ex)}
                             title="Ver execução"
                           >
-                            {ex.name}
+                            {isCardio ? 'Cardio' : ex.name}
                           </button>
-                          {ex.warmup && (
+                          {!isCardio && ex.warmup && (
                             <div className="mt-0.5 text-xs text-slate-500">{ex.warmup}</div>
                           )}
-                          {ex.notes && (
+                          {!isCardio && ex.notes && (
                             <div className="mt-0.5 text-xs text-slate-500">{ex.notes}</div>
+                          )}
+                          {isCardio && (
+                            <div className="mt-1.5 space-y-1">
+                              <input
+                                type="text"
+                                list={`cardio-types-${ex.id}`}
+                                placeholder="Tipo (ex.: esteira, bike, vôlei…)"
+                                value={cardioType}
+                                onChange={(e) =>
+                                  onUpdateEntry(session.id, ex.id, {
+                                    cardioType:
+                                      e.target.value.trim() === ''
+                                        ? null
+                                        : e.target.value,
+                                  })
+                                }
+                                className="field w-full min-w-[160px] max-w-[240px] text-xs"
+                                title="Qual tipo de cardio você vai fazer"
+                              />
+                              <datalist id={`cardio-types-${ex.id}`}>
+                                <option value="Esteira" />
+                                <option value="Bike" />
+                                <option value="Vôlei" />
+                                <option value="Elíptico" />
+                                <option value="Corrida" />
+                                <option value="Caminhada" />
+                                <option value="Remo" />
+                                <option value="Natação" />
+                              </datalist>
+                              <div className="text-[11px] text-slate-500">
+                                min · km opcional
+                              </div>
+                            </div>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-300">{ex.sets}</td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-300">{ex.targetReps}</td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-300">
+                      {isCardio ? '—' : ex.sets}
+                    </td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-300">
+                      {isCardio ? `${ex.targetReps} min` : ex.targetReps}
+                    </td>
                     <td className="px-3 py-3.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         <input
                           type="number"
                           min={0}
-                          placeholder="—"
+                          step={1}
+                          placeholder={isCardio ? 'min' : '—'}
                           value={performed ?? ''}
                           onChange={(e) =>
                             onUpdateEntry(session.id, ex.id, {
@@ -218,30 +265,39 @@ export function WorkoutView({
                             })
                           }
                           className="field w-16 text-center tabular-nums"
+                          title={isCardio ? 'Minutos' : 'Repetições realizadas'}
                         />
-                        {performed != null && (
-                          <span
-                            className={[
-                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold',
-                              hitTarget ? 'chip-ok' : 'bg-red-500/10 text-red-300 ring-1 ring-red-500/30',
-                            ].join(' ')}
-                          >
-                            {hitTarget ? <CheckCircle2 className="h-3 w-3 text-blue-400" /> : null}
-                            {performed}
-                          </span>
+                        {isCardio ? (
+                          <span className="text-xs text-slate-500">min</span>
+                        ) : (
+                          performed != null && (
+                            <span
+                              className={[
+                                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold',
+                                hitTarget
+                                  ? 'chip-ok'
+                                  : 'bg-red-500/10 text-red-300 ring-1 ring-red-500/30',
+                              ].join(' ')}
+                            >
+                              {hitTarget ? (
+                                <CheckCircle2 className="h-3 w-3 text-blue-400" />
+                              ) : null}
+                              {performed}
+                            </span>
+                          )
                         )}
                       </div>
                     </td>
                     <td className="px-3 py-3.5 tabular-nums text-slate-400">
-                      {prev != null ? `${prev} kg` : '—'}
+                      {prev != null ? `${prev} ${unit}` : '—'}
                     </td>
                     <td className="px-3 py-3.5">
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
                           min={0}
-                          step={0.5}
-                          placeholder="kg"
+                          step={loadStep}
+                          placeholder={isCardio ? 'km' : 'kg'}
                           value={current ?? ''}
                           onChange={(e) =>
                             onUpdateEntry(session.id, ex.id, {
@@ -250,8 +306,9 @@ export function WorkoutView({
                             })
                           }
                           className="field w-20 text-center tabular-nums"
+                          title={isCardio ? 'Quilômetros (opcional)' : 'Peso atual'}
                         />
-                        <span className="text-xs text-slate-500">kg</span>
+                        <span className="text-xs text-slate-500">{unit}</span>
                       </div>
                     </td>
                     <td className="px-5 py-3.5">

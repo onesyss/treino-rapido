@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
-import { GIF_CREDIT_PRIMARY, gifForName, normalizeExerciseName } from '../data/gifs'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { INITIAL_DATA, getWorkout } from '../data/initialData'
+import {
+  loadAppDataFromSupabase,
+  saveAppDataToSupabase,
+} from '../lib/appDataStore'
+import { isSupabaseConfigured } from '../lib/supabase'
 import type {
   AppData,
   Exercise,
@@ -9,124 +13,75 @@ import type {
   WorkoutSession,
 } from '../types'
 
-const STORAGE_KEY = 'treino-rapido-v8'
-const WORKOUT_OMBROS_ID = 'wk-ombros'
-
-function isValidStored(data: unknown): data is AppData {
-  return (
-    typeof data === 'object' &&
-    data !== null &&
-    Array.isArray((data as AppData).workouts) &&
-    (data as AppData).workouts.length >= 4
-  )
-}
-
-/** Corrige GIFs 404 / desatualizados usando o catálogo por nome. */
-function repairExerciseGifs(ex: Exercise): Exercise {
-  const catalog = gifForName(ex.name)
-  let next = ex
-  if (ex.name.toLowerCase().includes('panturrilha')) {
-    next = { ...next, muscleGroup: 'Pernas' as const }
-  }
-  if (catalog?.gifUrl && next.gifUrl !== catalog.gifUrl) {
-    next = {
-      ...next,
-      gifUrl: catalog.gifUrl,
-      gifCredit: catalog.gifCredit ?? next.gifCredit ?? GIF_CREDIT_PRIMARY,
-    }
-  } else if (!next.gifUrl && catalog?.gifUrl) {
-    next = {
-      ...next,
-      gifUrl: catalog.gifUrl,
-      gifCredit: catalog.gifCredit ?? GIF_CREDIT_PRIMARY,
-    }
-  }
-  return next
-}
-
-/** Inclui exercícios novos do seed (ex.: bi/tri na ficha de ombro) sem apagar histórico. */
-function mergeMissingSeedExercises(data: AppData): AppData {
-  const seedOmbro = INITIAL_DATA.workouts.find((w) => w.id === WORKOUT_OMBROS_ID)
-  if (!seedOmbro) return data
-
-  const workouts = data.workouts.map((w) => {
-    if (w.id !== WORKOUT_OMBROS_ID) return w
-    const have = new Set(w.exercises.map((e) => normalizeExerciseName(e.name)))
-    const missing = seedOmbro.exercises.filter(
-      (se) => !have.has(normalizeExerciseName(se.name))
-    )
-    if (!missing.length) {
-      return {
-        ...w,
-        title: seedOmbro.title,
-        shortLabel: seedOmbro.shortLabel,
-        warmupNote: seedOmbro.warmupNote,
-        coreNote: seedOmbro.coreNote,
-        goals: seedOmbro.goals,
-      }
-    }
-    return {
-      ...w,
-      title: seedOmbro.title,
-      shortLabel: seedOmbro.shortLabel,
-      warmupNote: seedOmbro.warmupNote,
-      coreNote: seedOmbro.coreNote,
-      goals: seedOmbro.goals,
-      exercises: [...w.exercises, ...missing.map((e) => structuredClone(e))],
-    }
-  })
-
-  const ombro = workouts.find((w) => w.id === WORKOUT_OMBROS_ID)
-  if (!ombro) return { ...data, workouts }
-
-  const sessions = data.sessions.map((s) => {
-    if (s.workoutId !== WORKOUT_OMBROS_ID) return s
-    const haveIds = new Set(s.entries.map((e) => e.exerciseId))
-    const extra = ombro.exercises
-      .filter((ex) => !haveIds.has(ex.id))
-      .map((ex) => ({
-        exerciseId: ex.id,
-        performedReps: null as number | null,
-        currentWeight: null as number | null,
-      }))
-    if (!extra.length) return s
-    return { ...s, entries: [...s.entries, ...extra] }
-  })
-
-  return { ...data, workouts, sessions }
-}
-
-function load(): AppData {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return structuredClone(INITIAL_DATA)
-    const parsed = JSON.parse(raw) as unknown
-    if (!isValidStored(parsed)) return structuredClone(INITIAL_DATA)
-    for (const w of parsed.workouts) {
-      w.exercises = w.exercises.map(repairExerciseGifs)
-    }
-    if (!parsed.workouts.some((w) => w.id === parsed.activeWorkoutId)) {
-      parsed.activeWorkoutId = parsed.workouts[0].id
-    }
-    // Nome padrão do atleta
-    if (!parsed.profileName?.trim() || parsed.profileName.trim() === 'Atleta') {
-      parsed.profileName = 'Marlon Miranda'
-    }
-    return mergeMissingSeedExercises(parsed)
-  } catch {
-    return structuredClone(INITIAL_DATA)
-  }
-}
+export type SyncStatus = 'loading' | 'ready' | 'saving' | 'saved' | 'error'
 
 export function useAppData() {
-  const [data, setData] = useState<AppData>(() => load())
+  const [data, setData] = useState<AppData | null>(null)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bootstrapped = useRef(false)
 
+  // Carrega do Supabase (com migração de localStorage se existir)
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    let cancelled = false
+    ;(async () => {
+      try {
+        setSyncStatus('loading')
+        setSyncError(null)
+        if (!isSupabaseConfigured) {
+          throw new Error(
+            'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env (veja .env.example).'
+          )
+        }
+        const loaded = await loadAppDataFromSupabase()
+        if (cancelled) return
+        setData(loaded)
+        setSyncStatus('ready')
+        bootstrapped.current = true
+      } catch (e) {
+        if (cancelled) return
+        const msg = e instanceof Error ? e.message : 'Erro ao carregar dados'
+        setSyncError(msg)
+        setSyncStatus('error')
+        // fallback só para não quebrar a UI — não persiste em localStorage
+        setData(structuredClone(INITIAL_DATA))
+        bootstrapped.current = true
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Persistência com debounce no Supabase
+  useEffect(() => {
+    if (!data || !bootstrapped.current) return
+    if (!isSupabaseConfigured) return
+    if (syncStatus === 'loading') return
+
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      try {
+        setSyncStatus('saving')
+        await saveAppDataToSupabase(data)
+        setSyncStatus('saved')
+        setSyncError(null)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Erro ao salvar'
+        setSyncError(msg)
+        setSyncStatus('error')
+      }
+    }, 500)
+
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
   }, [data])
 
   const setActiveWorkout = useCallback((workoutId: string) => {
     setData((d) => {
+      if (!d) return d
       const workout = d.workouts.find((w) => w.id === workoutId)
       if (!workout) return d
       const sessionsOf = d.sessions.filter((s) => s.workoutId === workoutId)
@@ -142,6 +97,7 @@ export function useAppData() {
             exerciseId: ex.id,
             performedReps: null,
             currentWeight: null,
+            cardioType: null,
           })),
         }
         sessions = [...d.sessions, neu]
@@ -154,23 +110,30 @@ export function useAppData() {
   }, [])
 
   const updateProfile = useCallback((profileName: string) => {
-    setData((d) => ({ ...d, profileName: profileName.trim() || 'Marlon Miranda' }))
+    setData((d) =>
+      d ? { ...d, profileName: profileName.trim() || 'Marlon Miranda' } : d
+    )
   }, [])
 
   const updateActiveWorkoutMeta = useCallback(
     (partial: Partial<Pick<WorkoutProgram, 'title' | 'warmupNote' | 'coreNote' | 'goals'>>) => {
-      setData((d) => ({
-        ...d,
-        workouts: d.workouts.map((w) =>
-          w.id === d.activeWorkoutId ? { ...w, ...partial } : w
-        ),
-      }))
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              workouts: d.workouts.map((w) =>
+                w.id === d.activeWorkoutId ? { ...w, ...partial } : w
+              ),
+            }
+          : d
+      )
     },
     []
   )
 
   const setExercises = useCallback((exercises: Exercise[]) => {
     setData((d) => {
+      if (!d) return d
       const workoutId = d.activeWorkoutId
       const workouts = d.workouts.map((w) =>
         w.id !== workoutId
@@ -190,16 +153,19 @@ export function useAppData() {
         if (s.workoutId !== workoutId) return s
         return {
           ...s,
-          entries: ordered.map((ex) => {
-            const existing = s.entries.find((e) => e.exerciseId === ex.id)
-            return (
-              existing ?? {
-                exerciseId: ex.id,
-                performedReps: null as number | null,
-                currentWeight: null as number | null,
-              }
-            )
-          }).filter((e) => ids.has(e.exerciseId)),
+          entries: ordered
+            .map((ex) => {
+              const existing = s.entries.find((e) => e.exerciseId === ex.id)
+              return (
+                existing ?? {
+                  exerciseId: ex.id,
+                  performedReps: null as number | null,
+                  currentWeight: null as number | null,
+                  cardioType: null as string | null,
+                }
+              )
+            })
+            .filter((e) => ids.has(e.exerciseId)),
         }
       })
       return { ...d, workouts, sessions }
@@ -208,25 +174,30 @@ export function useAppData() {
 
   const updateEntry = useCallback(
     (sessionId: string, exerciseId: string, patch: Partial<SessionEntry>) => {
-      setData((d) => ({
-        ...d,
-        sessions: d.sessions.map((s) =>
-          s.id !== sessionId
-            ? s
-            : {
-                ...s,
-                entries: s.entries.map((e) =>
-                  e.exerciseId === exerciseId ? { ...e, ...patch } : e
-                ),
-              }
-        ),
-      }))
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              sessions: d.sessions.map((s) =>
+                s.id !== sessionId
+                  ? s
+                  : {
+                      ...s,
+                      entries: s.entries.map((e) =>
+                        e.exerciseId === exerciseId ? { ...e, ...patch } : e
+                      ),
+                    }
+              ),
+            }
+          : d
+      )
     },
     []
   )
 
   const addSession = useCallback((label?: string) => {
     setData((d) => {
+      if (!d) return d
       const workout = getWorkout(d)
       const sessionsOf = d.sessions.filter((s) => s.workoutId === workout.id)
       const prev = sessionsOf[sessionsOf.length - 1]
@@ -241,6 +212,7 @@ export function useAppData() {
             exerciseId: ex.id,
             performedReps: null,
             currentWeight: last?.currentWeight ?? null,
+            cardioType: last?.cardioType ?? null,
           }
         }),
       }
@@ -253,11 +225,12 @@ export function useAppData() {
   }, [])
 
   const setActiveSession = useCallback((id: string) => {
-    setData((d) => ({ ...d, activeSessionId: id }))
+    setData((d) => (d ? { ...d, activeSessionId: id } : d))
   }, [])
 
   const deleteSession = useCallback((id: string) => {
     setData((d) => {
+      if (!d) return d
       const target = d.sessions.find((s) => s.id === id)
       if (!target) return d
       const same = d.sessions.filter((s) => s.workoutId === target.workoutId)
@@ -279,8 +252,24 @@ export function useAppData() {
     setData(structuredClone(INITIAL_DATA))
   }, [])
 
+  const retrySync = useCallback(async () => {
+    if (!data) return
+    try {
+      setSyncStatus('saving')
+      await saveAppDataToSupabase(data)
+      setSyncStatus('saved')
+      setSyncError(null)
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : 'Erro ao salvar')
+      setSyncStatus('error')
+    }
+  }, [data])
+
   return {
     data,
+    syncStatus,
+    syncError,
+    isLoading: data == null || syncStatus === 'loading',
     setActiveWorkout,
     updateProfile,
     updateActiveWorkoutMeta,
@@ -290,6 +279,7 @@ export function useAppData() {
     setActiveSession,
     deleteSession,
     resetAll,
+    retrySync,
   }
 }
 

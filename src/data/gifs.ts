@@ -181,6 +181,18 @@ export const GIF_BY_NAME: Record<string, GifEntry> = {
     gifFallback: primary('delts/cable-rear-delt-row-with-rope.gif'),
     fallbacks: [freeDb('Face_Pull'), freeDb('Cable_Rear_Delt_Fly')],
   },
+  cardio: {
+    // demo genérica de cardio (não amarra a uma modalidade)
+    gifUrl: primary('cardio/stationary-bike-walk.gif'),
+    gifFallback: primary('cardio/walk-elliptical-cross-trainer.gif'),
+    fallbacks: [
+      freeDb('Elliptical_Trainer'),
+      freeDb('Jogging_Treadmill'),
+      freeDb('Air_Bike'),
+      primary('cardio/walking-on-incline-treadmill.gif'),
+      alt('2141-rjtuP6X.gif'),
+    ],
+  },
 }
 
 export function gifForName(name: string): GifEntry | undefined {

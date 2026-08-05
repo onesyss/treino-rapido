@@ -13,7 +13,8 @@ export function volumeForSession(data: AppData, sessionId: string): number {
   if (!workout) return 0
   return session.entries.reduce((sum, e) => {
     const ex = workout.exercises.find((x) => x.id === e.exerciseId)
-    if (!ex || e.currentWeight == null || e.performedReps == null) return sum
+    if (!ex || ex.muscleGroup === 'Cardio') return sum
+    if (e.currentWeight == null || e.performedReps == null) return sum
     return sum + e.currentWeight * e.performedReps * ex.sets
   }, 0)
 }
@@ -23,7 +24,7 @@ export function volumeForSessionEntry(
   weight: number | null,
   reps: number | null
 ): number {
-  if (!ex || weight == null || reps == null) return 0
+  if (!ex || ex.muscleGroup === 'Cardio' || weight == null || reps == null) return 0
   return weight * reps * ex.sets
 }
 

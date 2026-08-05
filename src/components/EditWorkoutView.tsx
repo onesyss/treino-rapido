@@ -12,6 +12,7 @@ const GROUPS: MuscleGroup[] = [
   'Bíceps',
   'Tríceps',
   'Abdômen',
+  'Cardio',
   'Outro',
 ]
 

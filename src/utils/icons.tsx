@@ -1,5 +1,6 @@
 import {
   Armchair,
+  Activity,
   BicepsFlexed,
   CircleDot,
   Dumbbell,
@@ -66,6 +67,13 @@ export const GROUP_STYLE: Record<
     icon: 'text-sky-400',
     solid: '#38bdf8',
   },
+  Cardio: {
+    bg: 'bg-red-500/15',
+    text: 'text-orange-300',
+    ring: 'ring-orange-500/40',
+    icon: 'text-orange-400',
+    solid: '#fb923c',
+  },
   Outro: {
     bg: 'bg-panel-2',
     text: 'text-slate-300',
@@ -98,6 +106,8 @@ export function GroupIcon({
       return <Armchair className={className} />
     case 'Abdômen':
       return <Target className={className} />
+    case 'Cardio':
+      return <Activity className={className} />
     default:
       return <CircleDot className={className} />
   }

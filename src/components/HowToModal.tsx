@@ -21,6 +21,8 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
   const style = GROUP_STYLE[exercise.muscleGroup] ?? GROUP_STYLE.Outro
   const credit =
     gifForName(exercise.name)?.gifCredit ?? exercise.gifCredit
+  const isCardio =
+    exercise.muscleGroup === 'Cardio' || exercise.name.toLowerCase() === 'cardio'
 
   return (
     <div
@@ -44,7 +46,7 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
                 Como executar
               </p>
               <h2 id="howto-title" className="font-display mt-0.5 text-xl font-bold text-white">
-                {exercise.name}
+                {isCardio ? 'Cardio' : exercise.name}
               </h2>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
                 <span
@@ -56,11 +58,14 @@ export function HowToModal({ exercise, onClose }: HowToModalProps) {
                   ].join(' ')}
                 >
                   <GroupIcon group={exercise.muscleGroup} className="h-3 w-3" />
-                  {exercise.muscleGroup}
+                  {isCardio ? 'Cardio' : exercise.muscleGroup}
                 </span>
                 <span>
-                  {exercise.sets}×{exercise.targetReps}
-                  {exercise.warmup ? ` · ${exercise.warmup}` : ''}
+                  {isCardio
+                    ? `≈ ${exercise.targetReps} min · km opcional`
+                    : `${exercise.sets}×${exercise.targetReps}${
+                        exercise.warmup ? ` · ${exercise.warmup}` : ''
+                      }`}
                 </span>
               </p>
             </div>

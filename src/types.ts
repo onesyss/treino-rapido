@@ -6,6 +6,7 @@ export type MuscleGroup =
   | 'Bíceps'
   | 'Tríceps'
   | 'Abdômen'
+  | 'Cardio'
   | 'Outro'
 
 export type MotionType =
@@ -17,6 +18,7 @@ export type MotionType =
   | 'legpress'
   | 'curl'
   | 'calf'
+  | 'cardio'
   | 'generic'
 
 export interface Exercise {
@@ -38,6 +40,8 @@ export interface SessionEntry {
   exerciseId: string
   performedReps: number | null
   currentWeight: number | null
+  /** Tipo de cardio da sessão (ex.: esteira, bike, vôlei). */
+  cardioType?: string | null
 }
 
 export interface WorkoutSession {

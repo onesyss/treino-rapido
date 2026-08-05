@@ -57,13 +57,22 @@ const EX_ROSCA_SCOTT = id()
 // --- IDs treino B ---
 const EX_SUPINO_DECL = id()
 const EX_SUPINO_HALT = id()
+const EX_PEITO_ELEV_LAT = id()
+const EX_PEITO_DEV_MIL = id()
 const EX_ELEV_LAT = id()
 const EX_DEV_MILITAR = id()
 const EX_TRI_FRANCES = id()
 const EX_TRI_MAQ = id()
+const EX_OMBRO_FACE = id()
 const EX_OMBRO_ROSCA = id()
 const EX_OMBRO_TRI_FR = id()
 const EX_OMBRO_TRI_MQ = id()
+
+// --- Cardio (esteira) em cada ficha ---
+const EX_CARDIO_PERNAS = id()
+const EX_CARDIO_COSTAS = id()
+const EX_CARDIO_PEITO = id()
+const EX_CARDIO_OMBROS = id()
 
 const WORKOUT_PERNAS = 'wk-pernas'
 const WORKOUT_COSTAS_BICEPS = 'wk-costas-biceps'
@@ -71,6 +80,25 @@ const WORKOUT_PEITO_TRICEPS = 'wk-peito-triceps'
 const WORKOUT_OMBROS = 'wk-ombros'
 
 const today = new Date().toISOString().slice(0, 10)
+
+function cardio(exId: string): Exercise {
+  return ex({
+    id: exId,
+    name: 'Cardio',
+    muscleGroup: 'Cardio',
+    sets: 1,
+    targetReps: 20,
+    notes: undefined,
+    motion: 'cardio',
+    steps: [
+      'Escolha o cardio do dia (esteira, bike, vôlei, etc.).',
+      'Faça o tempo que quiser e anote os minutos.',
+      'Se quiser, anote também a distância em km.',
+      'Finalize no ritmo que preferir.',
+    ],
+    tips: 'Escreva o tipo (esteira, bike, vôlei…). Anote minutos e, se quiser, os km.',
+  })
+}
 
 const pernas: WorkoutProgram = {
   id: WORKOUT_PERNAS,
@@ -155,6 +183,7 @@ const pernas: WorkoutProgram = {
       notes: 'Fazer 3× na semana',
       motion: 'calf',
     }),
+    cardio(EX_CARDIO_PERNAS),
   ],
 }
 
@@ -218,6 +247,14 @@ const costasBiceps: WorkoutProgram = {
       tips: 'Braços estendidos, leve o cabo para a frente da coxa com controle nos dorsais.',
     }),
     ex({
+      id: EX_FACE_PULL,
+      name: 'Face Pull',
+      muscleGroup: 'Ombros',
+      sets: 3,
+      targetReps: 12,
+      tips: 'Puxe em direção ao rosto, cotovelos altos. Foque rotadores e deltoide posterior.',
+    }),
+    ex({
       id: EX_ROSCA_SCOTT,
       name: 'Rosca Scott',
       muscleGroup: 'Bíceps',
@@ -226,15 +263,16 @@ const costasBiceps: WorkoutProgram = {
       notes: '3×10–12',
       tips: 'Braços apoiados no banco Scott. Suba sem levantar o cotovelo do apoio.',
     }),
+    cardio(EX_CARDIO_COSTAS),
   ],
 }
 
 const peitoTriceps: WorkoutProgram = {
   id: WORKOUT_PEITO_TRICEPS,
-  title: 'Treino B — Peito e Tríceps',
+  title: 'Treino B — Peito, Ombros e Tríceps',
   shortLabel: 'Peito e Tríceps',
-  warmupNote: 'Superiores · empurrar',
-  coreNote: 'Escápulas retraídas no peito',
+  warmupNote: 'Superiores · empurrar + ombro',
+  coreNote: 'Escápulas retraídas · sem encolher trapézio',
   goals: ['↑ volume', '↑ estabilidade'],
   exercises: [
     ex({
@@ -256,6 +294,23 @@ const peitoTriceps: WorkoutProgram = {
       tips: 'Halteres descem controlados. Cotovelos ~45° do tronco.',
     }),
     ex({
+      id: EX_PEITO_ELEV_LAT,
+      name: 'Elevação lateral',
+      muscleGroup: 'Ombros',
+      sets: 4,
+      targetReps: 12,
+      notes: '4×10–12',
+      tips: 'Cotovelos levemente flexionados. Suba até a linha do ombro sem encolher.',
+    }),
+    ex({
+      id: EX_PEITO_DEV_MIL,
+      name: 'Desenvolvimento militar',
+      muscleGroup: 'Ombros',
+      sets: 3,
+      targetReps: 10,
+      tips: 'Empurre a barra para cima sem arquear demais a lombar. Core firme.',
+    }),
+    ex({
       id: EX_TRI_FRANCES,
       name: 'Tríceps francês',
       muscleGroup: 'Tríceps',
@@ -273,6 +328,7 @@ const peitoTriceps: WorkoutProgram = {
       notes: '4×10–12',
       tips: 'Cotovelos colados. Estenda totalmente e controle a volta.',
     }),
+    cardio(EX_CARDIO_PEITO),
   ],
 }
 
@@ -302,7 +358,7 @@ const ombros: WorkoutProgram = {
       tips: 'Empurre a barra para cima sem arquear demais a lombar. Core firme.',
     }),
     ex({
-      id: EX_FACE_PULL,
+      id: EX_OMBRO_FACE,
       name: 'Face Pull',
       muscleGroup: 'Ombros',
       sets: 3,
@@ -336,6 +392,7 @@ const ombros: WorkoutProgram = {
       notes: '4×10–12',
       tips: 'Cotovelos colados. Estenda totalmente e controle a volta.',
     }),
+    cardio(EX_CARDIO_OMBROS),
   ],
 }
 
@@ -344,6 +401,7 @@ function entriesFor(workout: WorkoutProgram) {
     exerciseId: e.id,
     performedReps: null as number | null,
     currentWeight: null as number | null,
+    cardioType: null as string | null,
   }))
 }
 
