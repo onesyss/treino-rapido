@@ -61,7 +61,6 @@ function repairCardioFromSeed(ex: Exercise, seedCardio: Exercise | undefined): E
   if (!seedCardio) return repairExerciseGifs(ex)
   return repairExerciseGifs({
     ...ex,
-    // preserva "Cardio 2", etc.
     name: ex.name?.trim() || 'Cardio',
     notes: ex.notes,
     tips: seedCardio.tips,
@@ -103,7 +102,6 @@ function reconcileFromSeed(stored: WorkoutProgram, seed: WorkoutProgram): Workou
     return repairExerciseGifs(base)
   })
 
-  // preserva cardios extras (Cardio 2, 3…) adicionados pelo usuário
   const extraCardios = stored.exercises
     .filter((e) => isCardioExercise(e) && !usedIds.has(e.id))
     .map((e) =>
@@ -196,6 +194,37 @@ export function normalizeAppData(raw: AppData): AppData {
   return { ...data, workouts, sessions }
 }
 
+/** Quanto mais preenchido, maior o score — evita aparelho vazio apagar o treino do tablet. */
+export function fillScore(data: AppData | null | undefined): number {
+  if (!data || !isValidStored(data)) return -1
+  let score = 0
+  score += data.sessions.length * 3
+  for (const s of data.sessions) {
+    for (const e of s.entries) {
+      if (e.currentWeight != null && e.currentWeight > 0) score += 4
+      if (e.performedReps != null && e.performedReps > 0) score += 4
+      if (e.cardioType) score += 2
+    }
+  }
+  score += data.workouts.reduce((n, w) => n + w.exercises.length, 0)
+  return score
+}
+
+function pickRichest(...candidates: Array<AppData | null | undefined>): AppData {
+  let best: AppData = normalizeAppData(structuredClone(INITIAL_DATA))
+  let bestScore = fillScore(best)
+  for (const c of candidates) {
+    if (!c || !isValidStored(c)) continue
+    const n = normalizeAppData(c)
+    const s = fillScore(n)
+    if (s > bestScore) {
+      best = n
+      bestScore = s
+    }
+  }
+  return best
+}
+
 function readLegacyLocal(): AppData | null {
   for (const key of LOCAL_LEGACY_KEYS) {
     try {
@@ -210,7 +239,7 @@ function readLegacyLocal(): AppData | null {
   return null
 }
 
-function writeLocalMirror(data: AppData) {
+export function writeLocalMirror(data: AppData) {
   try {
     localStorage.setItem(LOCAL_MIRROR_KEY, JSON.stringify(data))
   } catch {
@@ -218,7 +247,7 @@ function writeLocalMirror(data: AppData) {
   }
 }
 
-function clearLegacyLocal() {
+function clearOldLegacyKeys() {
   for (const key of LOCAL_LEGACY_KEYS) {
     if (key === LOCAL_MIRROR_KEY) continue
     try {
@@ -229,7 +258,7 @@ function clearLegacyLocal() {
   }
 }
 
-/** Garante sessão (anônima se necessário) e devolve o user id. */
+/** Garante sessão (anônima se necessário). Falha NÃO bloqueia o shared se tiver ok. */
 export async function ensureAuthUserId(): Promise<string> {
   const supabase = getSupabase()
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
@@ -241,7 +270,7 @@ export async function ensureAuthUserId(): Promise<string> {
     const msg = error.message || String(error)
     if (/anonymous/i.test(msg) && /disabled/i.test(msg)) {
       throw new Error(
-        'Anonymous sign-ins estão desativados no Supabase. Ative em: Authentication → Sign In / Providers → Anonymous → Enable. Depois recarregue a página.'
+        'Anonymous sign-ins estão desativados no Supabase. Ative em: Authentication → Providers → Anonymous.'
       )
     }
     throw error
@@ -250,100 +279,107 @@ export async function ensureAuthUserId(): Promise<string> {
   return data.user.id
 }
 
+function sharedMissingMessage(detail: string): string {
+  return (
+    'Cloud compartilhado indisponível. No Supabase → SQL Editor, rode o arquivo supabase/schema.sql ' +
+    '(cria a tabela shared_app_state). Depois recarregue tablet e celular. ' +
+    `Detalhe: ${detail}`
+  )
+}
+
+async function upsertShared(data: AppData): Promise<void> {
+  const supabase = getSupabase()
+  const { error } = await supabase.from('shared_app_state').upsert({
+    id: SHARED_STATE_ID,
+    data,
+  })
+  if (error) throw new Error(sharedMissingMessage(error.message))
+}
+
 /**
- * Carrega o estado:
- * 1) shared_app_state (mesmo treino em todos os aparelhos)
- * 2) app_state do usuário anônimo (legado)
- * 3) localStorage / seed
- * Sempre espelha no localStorage e promove para shared quando possível.
+ * Fonte única: shared_app_state (id=main) = mesmo treino em tablet e celular.
+ * Nunca sobrescreve a nuvem com um estado mais vazio.
  */
 export async function loadAppDataFromSupabase(): Promise<AppData> {
   if (!isSupabaseConfigured()) {
-    const local = readLegacyLocal()
-    const data = normalizeAppData(local ?? structuredClone(INITIAL_DATA))
+    const data = pickRichest(readLegacyLocal())
     writeLocalMirror(data)
     return data
   }
 
   const supabase = getSupabase()
-  const userId = await ensureAuthUserId()
 
-  // 1) Estado compartilhado
+  // Shared primeiro (não depende de qual usuário anônimo está logado)
   const sharedRes = await supabase
     .from('shared_app_state')
     .select('data')
     .eq('id', SHARED_STATE_ID)
     .maybeSingle()
 
-  if (!sharedRes.error && sharedRes.data?.data && isValidStored(sharedRes.data.data)) {
-    const data = normalizeAppData(sharedRes.data.data as AppData)
-    writeLocalMirror(data)
-    // mantém backup por user
-    await supabase.from('app_state').upsert({ user_id: userId, data })
-    return data
+  if (sharedRes.error) {
+    throw new Error(sharedMissingMessage(sharedRes.error.message))
   }
 
-  // 2) Linha do usuário (browser que já salvava antes)
-  const ownRes = await supabase
-    .from('app_state')
-    .select('data')
-    .eq('user_id', userId)
-    .maybeSingle()
+  const shared =
+    sharedRes.data?.data && isValidStored(sharedRes.data.data)
+      ? normalizeAppData(sharedRes.data.data as AppData)
+      : null
 
-  if (ownRes.error) throw ownRes.error
-
-  let payload: AppData | null = null
-  if (ownRes.data?.data && isValidStored(ownRes.data.data)) {
-    payload = normalizeAppData(ownRes.data.data as AppData)
-  } else {
-    const legacy = readLegacyLocal()
-    payload = normalizeAppData(legacy ?? structuredClone(INITIAL_DATA))
-  }
-
-  writeLocalMirror(payload)
-
-  // 3) Promove para shared (se a tabela existir)
-  if (!sharedRes.error || !/shared_app_state|schema cache|does not exist|PGRST/i.test(
-    String(sharedRes.error?.message ?? sharedRes.error?.code ?? '')
-  )) {
-    const { error: sharedUpsertError } = await supabase.from('shared_app_state').upsert({
-      id: SHARED_STATE_ID,
-      data: payload,
-    })
-    if (sharedUpsertError) {
-      // tabela ainda não criada: ok, usa só app_state
-      console.warn('[Supabase] shared_app_state indisponível:', sharedUpsertError.message)
+  // Backup por user / local (só para migrar treino antigo)
+  let own: AppData | null = null
+  try {
+    const userId = await ensureAuthUserId()
+    const ownRes = await supabase
+      .from('app_state')
+      .select('data')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!ownRes.error && ownRes.data?.data && isValidStored(ownRes.data.data)) {
+      own = normalizeAppData(ownRes.data.data as AppData)
     }
+  } catch (e) {
+    console.warn('[Supabase] auth/backup opcional:', e)
   }
 
-  const { error: upsertError } = await supabase.from('app_state').upsert({
-    user_id: userId,
-    data: payload,
-  })
-  if (upsertError) throw upsertError
+  const local = readLegacyLocal()
+  const chosen = pickRichest(shared, own, local)
 
-  clearLegacyLocal()
-  return payload
+  writeLocalMirror(chosen)
+  clearOldLegacyKeys()
+
+  // Garante linha shared com o melhor conteúdo (não rebaixa se nuvem já for rica)
+  if (!shared || fillScore(chosen) > fillScore(shared)) {
+    await upsertShared(chosen)
+  }
+
+  // Backup por user (best-effort)
+  try {
+    const userId = await ensureAuthUserId()
+    await supabase.from('app_state').upsert({ user_id: userId, data: chosen })
+  } catch {
+    /* ignore */
+  }
+
+  return chosen
 }
 
 export async function saveAppDataToSupabase(data: AppData): Promise<void> {
   writeLocalMirror(data)
   if (!isSupabaseConfigured()) return
 
-  const supabase = getSupabase()
-  const userId = await ensureAuthUserId()
+  // Sempre salva no shared — é o que o outro aparelho vai ler
+  await upsertShared(data)
 
-  const shared = await supabase.from('shared_app_state').upsert({
-    id: SHARED_STATE_ID,
-    data,
-  })
-  if (shared.error) {
-    console.warn('[Supabase] save shared:', shared.error.message)
+  try {
+    const userId = await ensureAuthUserId()
+    const supabase = getSupabase()
+    await supabase.from('app_state').upsert({ user_id: userId, data })
+  } catch {
+    /* backup opcional */
   }
+}
 
-  const { error } = await supabase.from('app_state').upsert({
-    user_id: userId,
-    data,
-  })
-  if (error) throw error
+/** Recarrega a nuvem (ex.: ao voltar pro app no celular). */
+export async function reloadRichestFromCloud(): Promise<AppData> {
+  return loadAppDataFromSupabase()
 }

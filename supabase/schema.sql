@@ -51,23 +51,31 @@ alter table public.shared_app_state enable row level security;
 drop policy if exists "shared_app_state_select_all" on public.shared_app_state;
 create policy "shared_app_state_select_all"
   on public.shared_app_state for select
+  to anon, authenticated
   using (true);
 
 drop policy if exists "shared_app_state_insert_all" on public.shared_app_state;
 create policy "shared_app_state_insert_all"
   on public.shared_app_state for insert
+  to anon, authenticated
   with check (true);
 
 drop policy if exists "shared_app_state_update_all" on public.shared_app_state;
 create policy "shared_app_state_update_all"
   on public.shared_app_state for update
+  to anon, authenticated
   using (true)
   with check (true);
 
 drop policy if exists "shared_app_state_delete_all" on public.shared_app_state;
 create policy "shared_app_state_delete_all"
   on public.shared_app_state for delete
+  to anon, authenticated
   using (true);
+
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.shared_app_state to anon, authenticated;
+grant select, insert, update, delete on public.app_state to anon, authenticated;
 
 -- updated_at
 create or replace function public.set_app_state_updated_at()

@@ -1,45 +1,22 @@
-# Supabase setup — Treino de Marlon Miranda
+# Supabase — treino igual no tablet e no celular
 
-## 1. Criar projeto
-1. Acesse [https://supabase.com](https://supabase.com) e crie um projeto.
-2. Abra **SQL Editor** e execute o arquivo `supabase/schema.sql` **inteiro**.
+## Obrigatório (1x)
+No **SQL Editor** do Supabase, rode **na ordem**:
 
-## 2. Auth anônimo
-1. Vá em **Authentication → Providers**.
-2. Ative **Anonymous Sign-Ins**.
+1. `supabase/schema.sql` (cria tudo)
+2. `supabase/migrate-shared.sql` (copia treinos antigos → shared)
 
-## 3. Variáveis de ambiente (React + Vite)
-No `.env` (já versionado com as chaves publicáveis):
+Ou só o `migrate-shared.sql` se a tabela `app_state` já existir.
 
-```env
-VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-```
+## Como funciona
+- **Um único** registro: `shared_app_state` com `id = main`
+- Tablet salva → nuvem → celular carrega o **mesmo** JSON
+- Ao reabrir o app, puxa de novo a nuvem
+- Aparelho vazio **não apaga** o treino preenchido
 
-## 4. Como os dados ficam iguais em todos os lugares
-O app usa a tabela **`shared_app_state`** (id = `main`):
-- mesmo treino no localhost, Netlify, GitHub Pages, celular
-- também espelha em `localStorage` e em `app_state` (backup por user)
+## Conferir
+- Badge no app: **Salvo na nuvem**
+- Se aparecer erro de `shared_app_state`, o SQL ainda não rodou
 
-### Se você JÁ preencheu em algum browser
-No SQL Editor do Supabase, rode (depois do schema):
-
-```sql
-insert into public.shared_app_state (id, data)
-select 'main', data
-from public.app_state
-order by updated_at desc nulls last
-limit 1
-on conflict (id) do update
-  set data = excluded.data,
-      updated_at = now();
-```
-
-Isso copia a linha mais recente do treino preenchido para o estado compartilhado.
-Depois abra o app em qualquer URL: os pesos/reps já devem aparecer.
-
-## 5. Tabelas
-| Tabela | Uso |
-|--------|-----|
-| `shared_app_state` | treino único compartilhado |
-| `app_state` | backup por usuário anônimo |
+## Auth
+Ative **Authentication → Providers → Anonymous**.

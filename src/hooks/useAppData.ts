@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { INITIAL_DATA, getWorkout } from '../data/initialData'
 import {
+  fillScore,
   loadAppDataFromSupabase,
+  reloadRichestFromCloud,
   saveAppDataToSupabase,
+  writeLocalMirror,
 } from '../lib/appDataStore'
 import { isSupabaseConfigured } from '../lib/supabase'
 import type {
@@ -20,45 +23,81 @@ export function useAppData() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
   const [syncError, setSyncError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const bootstrapped = useRef(false)
+  /** Só persiste na nuvem depois de um load bem-sucedido — evita zerar o tablet. */
+  const canPersist = useRef(false)
 
-  // Carrega do Supabase (com migração de localStorage se existir)
+  const applyLoaded = useCallback((loaded: AppData) => {
+    setData(loaded)
+    writeLocalMirror(loaded)
+    canPersist.current = true
+    setSyncStatus('ready')
+    setSyncError(null)
+  }, [])
+
+  // Carrega do Supabase (shared = tablet + celular)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         setSyncStatus('loading')
         setSyncError(null)
+        canPersist.current = false
         if (!isSupabaseConfigured()) {
           throw new Error(
-            'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env (veja .env.example) e reinicie o npm run dev.'
+            'Configure VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY no arquivo .env e reinicie o app.'
           )
         }
         const loaded = await loadAppDataFromSupabase()
         if (cancelled) return
-        setData(loaded)
-        setSyncStatus('ready')
-        bootstrapped.current = true
+        applyLoaded(loaded)
       } catch (e) {
         if (cancelled) return
         const msg = e instanceof Error ? e.message : 'Erro ao carregar dados'
         setSyncError(msg)
         setSyncStatus('error')
-        // fallback só para não quebrar a UI — não persiste em localStorage
+        canPersist.current = false
+        // NÃO grava INITIAL na nuvem — só mostra seed local sem sobrescrever shared
         setData(structuredClone(INITIAL_DATA))
-        bootstrapped.current = true
       }
     })()
     return () => {
       cancelled = true
     }
+  }, [applyLoaded])
+
+  // Ao voltar pro app (celular em foco), puxa o shared de novo
+  useEffect(() => {
+    const pull = async () => {
+      if (document.visibilityState !== 'visible') return
+      if (!isSupabaseConfigured() || !canPersist.current) return
+      try {
+        const fresh = await reloadRichestFromCloud()
+        setData((current) => {
+          if (!current) return fresh
+          // se a nuvem tem mais dados, troca; se o aparelho local for mais rico, mantém (salva depois)
+          if (fillScore(fresh) > fillScore(current)) return fresh
+          return current
+        })
+        setSyncStatus('saved')
+      } catch {
+        /* silencioso no pull em background */
+      }
+    }
+    const onVis = () => {
+      void pull()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('focus', onVis)
+    }
   }, [])
 
-  // Persistência com debounce no Supabase
+  // Persistência com debounce no shared_app_state
   useEffect(() => {
-    if (!data || !bootstrapped.current) return
+    if (!data || !canPersist.current) return
     if (!isSupabaseConfigured()) return
-    if (syncStatus === 'loading') return
 
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
